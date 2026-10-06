@@ -1,0 +1,28 @@
+### Gradle ###
+.gradle/
+build/
+
+### Git ###
+.git/
+.gitignore
+
+### IDE ###
+.idea/
+.vscode/
+*.iml
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Documentacion ###
+README.md
+*.md
+
+### CI/CD ###
+.github/
+
+### Entorno ###
+.env
+*.env.local
+application-local.yml
