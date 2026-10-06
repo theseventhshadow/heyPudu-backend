@@ -1,0 +1,49 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/heypudu?currentSchema=heypudu_posts
+    username: heypudu_posts_user
+    password: devpassword
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 30000
+
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID
+          jwk-set-uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID/.well-known/jwks.json
+
+clients:
+  users:
+    base-url: http://localhost:8082
+  interactions:
+    base-url: http://localhost:8084
+
+aws:
+  s3:
+    region: us-east-1
+    audio-bucket: heypudu-audio-dev
+    covers-bucket: heypudu-covers-dev
+
+logging:
+  level:
+    root: INFO
+    com.heypudu.ms_posts: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.springframework.security: DEBUG
+    org.springframework.web.client: DEBUG
+    software.amazon.awssdk: INFO
+
+management:
+  endpoint:
+    health:
+      show-details: always
