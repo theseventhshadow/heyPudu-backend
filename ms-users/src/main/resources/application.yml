@@ -1,0 +1,70 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: ms-users
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/heypudu?currentSchema=heypudu_users}
+    username: ${DB_USERNAME:heypudu_users_user}
+    password: ${DB_PASSWORD:changeme}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        default_schema: heypudu_users
+    open-in-view: false
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    schemas: heypudu_users
+    default-schema: heypudu_users
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${COGNITO_ISSUER_URI}
+          jwk-set-uri: ${COGNITO_JWK_SET_URI}
+
+  servlet:
+    multipart:
+      enabled: false
+
+clients:
+  auth:
+    base-url: ${CLIENTS_AUTH_BASE_URL:http://localhost:8081}
+  posts:
+    enabled: ${CLIENTS_POSTS_ENABLED:false}
+    base-url: ${CLIENTS_POSTS_BASE_URL:http://localhost:8083}
+aws:
+  s3:
+    region: ${AWS_REGION:us-east-1}
+    avatars-bucket: ${S3_AVATARS_BUCKET:heypudu-avatars}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    com.heypudu.ms_users: DEBUG
+    org.springframework.security: INFO
