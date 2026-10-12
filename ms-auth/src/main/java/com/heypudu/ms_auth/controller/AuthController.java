@@ -21,25 +21,13 @@ public class AuthController {
         this.authService = authService;
     }
 
-    /**
-     * Devuelve los datos del usuario autenticado a partir del JWT.
-     * No crea ni modifica nada en la BD.
-     */
     @GetMapping("/me")
     public ResponseEntity<AuthUserResponse> getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
-        AuthUserResponse response = authService.getCurrentUser(jwt);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(authService.getCurrentUser(jwt));
     }
 
-    /**
-     * Sincroniza el usuario de Cognito con la BD de ms-auth.
-     * Se llama una sola vez, tras el primer login exitoso en Cognito.
-     * Si el usuario ya existe, devuelve el registro existente.
-     * Si no existe, lo crea.
-     */
     @PostMapping("/sync")
     public ResponseEntity<SyncUserResponse> syncUser(@AuthenticationPrincipal Jwt jwt) {
-        SyncUserResponse response = authService.syncUser(jwt);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(authService.syncUser(jwt));
     }
 }

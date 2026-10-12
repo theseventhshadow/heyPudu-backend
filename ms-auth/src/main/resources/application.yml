@@ -1,36 +1,20 @@
-server:
-  port: 8081
-
 spring:
-  application:
-    name: ms-auth
-
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
-
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/heypudu?currentSchema=heypudu_auth}
-    username: ${DB_USERNAME:heypudu_auth_user}
-    password: ${DB_PASSWORD:changeme}
-    driver-class-name: org.postgresql.Driver
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
 
   jpa:
-    hibernate:
-      ddl-auto: validate
+    show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
-        default_schema: heypudu_auth
-    open-in-view: false
-    show-sql: false
-
-  flyway:
-    enabled: true
-    locations: classpath:db/migration
-    baseline-on-migrate: true
-    schemas: heypudu_auth
-    default-schema: heypudu_auth
+        format_sql: false
 
   security:
     oauth2:
@@ -39,17 +23,29 @@ spring:
           issuer-uri: ${COGNITO_ISSUER_URI}
           jwk-set-uri: ${COGNITO_JWK_SET_URI}
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
-  endpoint:
-    health:
-      show-details: never
+clients:
+  users:
+    base-url: ${CLIENTS_USERS_BASE_URL}
+
+aws:
+  cognito:
+    region: ${AWS_REGION}
+    user-pool-id: ${COGNITO_USER_POOL_ID}
 
 logging:
   level:
-    root: INFO
-    com.heypudu.ms_auth: DEBUG
-    org.springframework.security: INFO
+    root: WARN
+    com.heypudu.ms_auth: INFO
+    org.springframework.security: WARN
+    org.hibernate: WARN
+    org.springframework.web.client: WARN
+    software.amazon.awssdk: WARN
+
+management:
+  endpoint:
+    health:
+      show-details: never
+  endpoints:
+    web:
+      exposure:
+        include: health
