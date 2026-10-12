@@ -21,6 +21,15 @@ spring:
           issuer-uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID
           jwk-set-uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID/.well-known/jwks.json
 
+clients:
+  users:
+    base-url: http://localhost:8082
+
+aws:
+  cognito:
+    region: us-east-1
+    user-pool-id: us-east-1_DEVPOOLID
+
 logging:
   level:
     root: INFO
@@ -28,6 +37,8 @@ logging:
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
     org.springframework.security: DEBUG
+    org.springframework.web.client: DEBUG
+    software.amazon.awssdk: INFO
 
 management:
   endpoint:

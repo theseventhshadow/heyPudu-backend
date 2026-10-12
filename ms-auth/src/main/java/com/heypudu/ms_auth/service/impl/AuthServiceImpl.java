@@ -1,5 +1,7 @@
 package com.heypudu.ms_auth.service.impl;
 
+import com.heypudu.ms_auth.client.UserClient;
+import com.heypudu.ms_auth.dto.request.CreateUserProfileRequest;
 import com.heypudu.ms_auth.dto.response.AuthUserResponse;
 import com.heypudu.ms_auth.dto.response.SyncUserResponse;
 import com.heypudu.ms_auth.exception.ResourceNotFoundException;
@@ -20,17 +22,22 @@ import java.util.UUID;
 public class AuthServiceImpl implements AuthService {
 
     private static final String DEFAULT_STATUS = "ACTIVE";
+    private static final String DEFAULT_NAME = "Usuario";
+    private static final String DEFAULT_USERNAME_PREFIX = "user_";
 
     private final AuthUserRepository authUserRepository;
     private final CognitoUserExtractor cognitoUserExtractor;
     private final AuthUserMapper authUserMapper;
+    private final UserClient userClient;
 
     public AuthServiceImpl(AuthUserRepository authUserRepository,
                            CognitoUserExtractor cognitoUserExtractor,
-                           AuthUserMapper authUserMapper) {
+                           AuthUserMapper authUserMapper,
+                           UserClient userClient) {
         this.authUserRepository = authUserRepository;
         this.cognitoUserExtractor = cognitoUserExtractor;
         this.authUserMapper = authUserMapper;
+        this.userClient = userClient;
     }
 
     @Override
@@ -55,15 +62,32 @@ public class AuthServiceImpl implements AuthService {
 
         return authUserRepository.findByCognitoSub(cognitoSub)
                 .map(existing -> authUserMapper.toSyncUserResponse(existing, false))
-                .orElseGet(() -> {
-                    AuthUser newUser = new AuthUser(
-                            cognitoSub,
-                            email,
-                            DEFAULT_STATUS,
-                            Instant.now()
-                    );
-                    AuthUser saved = authUserRepository.save(newUser);
-                    return authUserMapper.toSyncUserResponse(saved, true);
-                });
+                .orElseGet(() -> createNewUser(cognitoSub, email, jwt.getTokenValue()));
+    }
+
+    private SyncUserResponse createNewUser(UUID cognitoSub, String email, String jwt) {
+        AuthUser newUser = new AuthUser(
+                cognitoSub,
+                email,
+                DEFAULT_STATUS,
+                Instant.now()
+        );
+        AuthUser saved = authUserRepository.save(newUser);
+
+        String temporaryUsername = buildTemporaryUsername(cognitoSub);
+        CreateUserProfileRequest profileRequest = new CreateUserProfileRequest(
+                cognitoSub,
+                DEFAULT_NAME,
+                temporaryUsername,
+                null,
+                null
+        );
+        userClient.createUserProfile(profileRequest, jwt);
+
+        return authUserMapper.toSyncUserResponse(saved, true);
+    }
+
+    private String buildTemporaryUsername(UUID cognitoSub) {
+        return DEFAULT_USERNAME_PREFIX + cognitoSub.toString().substring(0, 8);
     }
 }
