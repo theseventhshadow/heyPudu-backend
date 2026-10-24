@@ -690,6 +690,7 @@ Los endpoints internos se prefijan con `/api/v1/internal/` y **no** se exponen e
 | `DB_PASSWORD` | Contraseña de BD. |
 | `COGNITO_ISSUER_URI` | Issuer del User Pool de Cognito. |
 | `COGNITO_JWK_SET_URI` | Endpoint JWKS del User Pool. |
+| `APP_CORS_ALLOWED_ORIGINS` | Orígenes separados por coma. En producción: `https://heypudu.vercel.app`. |
 
 ### Variables específicas por microservicio
 
@@ -701,6 +702,55 @@ Los endpoints internos se prefijan con `/api/v1/internal/` y **no** se exponen e
 | `ms-users` | `CLIENTS_AUTH_BASE_URL` | URL base de `ms-auth`. |
 | `ms-posts` | `CLIENTS_USERS_BASE_URL` | URL base de `ms-users`. |
 | `ms-interactions` | `CLIENTS_POSTS_BASE_URL` | URL base de `ms-posts`. |
+
+### Frontend en Vercel
+
+El frontend de producción está publicado en `https://heypudu.vercel.app`.
+Configura esta variable en cada contenedor:
+
+```text
+APP_CORS_ALLOWED_ORIGINS=https://heypudu.vercel.app
+```
+
+Para desarrollo local puedes permitir ambos orígenes:
+
+```text
+APP_CORS_ALLOWED_ORIGINS=http://localhost:5173,https://heypudu.vercel.app
+```
+
+Los cuatro microservicios aplican esta lista a las peticiones CORS, incluyendo
+las peticiones `OPTIONS` de preflight. No se debe usar `*` en producción.
+
+El frontend debe usar como URL base la URL pública de API Gateway, no la IP ni
+los puertos de EC2:
+
+```text
+VITE_API_BASE_URL=https://<api-id>.execute-api.us-east-1.amazonaws.com/<stage>
+```
+
+### Configuración CORS de S3
+
+El bucket de producción es `heypudu-data-561816430875-us-east-1-an`. Debe
+permanecer privado y tener esta configuración CORS para permitir las cargas
+directas mediante URLs prefirmadas:
+
+```json
+[
+  {
+    "AllowedHeaders": ["Content-Type", "Authorization"],
+    "AllowedMethods": ["GET", "PUT", "HEAD"],
+    "AllowedOrigins": [
+      "https://heypudu.vercel.app",
+      "http://localhost:5173"
+    ],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+En producción se puede quitar `http://localhost:5173` después de terminar las
+pruebas locales.
 
 ---
 
