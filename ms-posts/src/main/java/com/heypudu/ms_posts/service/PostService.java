@@ -25,6 +25,10 @@ public interface PostService {
 
     void deletePost(UUID postId, Jwt jwt);
 
+    Page<PostResponse> listAudioPosts(Pageable pageable);
+
+    void deletePostAsAdmin(UUID postId, Jwt jwt);
+
     PresignedUrlResponse generateAudioUploadUrl(PresignedUrlRequest request, Jwt jwt);
 
     PresignedUrlResponse generateCoverUploadUrl(PresignedUrlRequest request, Jwt jwt);

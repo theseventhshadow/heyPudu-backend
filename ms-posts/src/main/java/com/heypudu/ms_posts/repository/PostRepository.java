@@ -19,6 +19,8 @@ public interface PostRepository extends JpaRepository<Post, UUID> {
 
     Page<Post> findByAuthorIdIn(List<UUID> authorIds, Pageable pageable);
 
+    Page<Post> findByType(String type, Pageable pageable);
+
     @Query("""
             SELECT p FROM Post p
             WHERE (LOWER(p.title) LIKE LOWER(CONCAT('%', :q, '%'))

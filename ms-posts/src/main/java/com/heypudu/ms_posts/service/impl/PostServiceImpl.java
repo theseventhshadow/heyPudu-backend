@@ -156,6 +156,29 @@ public class PostServiceImpl implements PostService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Page<PostResponse> listAudioPosts(org.springframework.data.domain.Pageable pageable) {
+        return postRepository.findByType(TYPE_AUDIO, pageable).map(this::toPostResponse);
+    }
+
+    @Override
+    @Transactional
+    public void deletePostAsAdmin(UUID postId, Jwt jwt) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Publicacion no encontrada con id: " + postId));
+
+        interactionClient.deleteInteractionsByPost(postId, jwt.getTokenValue());
+        if (post.getAudioKey() != null) {
+            s3Service.deleteAudio(post.getAudioKey());
+        }
+        if (post.getCoverImageKey() != null) {
+            s3Service.deleteCover(post.getCoverImageKey());
+        }
+        postRepository.delete(post);
+    }
+
+    @Override
     public PresignedUrlResponse generateAudioUploadUrl(PresignedUrlRequest request, Jwt jwt) {
         return s3Service.generateAudioUploadUrl(request);
     }
