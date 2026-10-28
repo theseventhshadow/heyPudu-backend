@@ -1,8 +1,6 @@
 services:
   ms-auth:
-    build:
-      context: ./ms-auth
-    image: heypudu/ms-auth:latest
+    image: unalmaermitana/heypudu-ms-auth:latest
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -20,9 +18,7 @@ services:
       - heypudu-internal
 
   ms-users:
-    build:
-      context: ./ms-users
-    image: heypudu/ms-users:latest
+    image: unalmaermitana/heypudu-ms-users:latest
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -42,9 +38,7 @@ services:
       - heypudu-internal
 
   ms-posts:
-    build:
-      context: ./ms-posts
-    image: heypudu/ms-posts:latest
+    image: unalmaermitana/heypudu-ms-posts:latest
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -64,9 +58,7 @@ services:
       - heypudu-internal
 
   ms-interactions:
-    build:
-      context: ./ms-interactions
-    image: heypudu/ms-interactions:latest
+    image: unalmaermitana/heypudu-ms-interactions:latest
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
