@@ -1,0 +1,71 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: ms-posts
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/heypudu?currentSchema=heypudu_posts}
+    username: ${DB_USERNAME:heypudu_posts_user}
+    password: ${DB_PASSWORD:changeme}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        default_schema: heypudu_posts
+    open-in-view: false
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    schemas: heypudu_posts
+    default-schema: heypudu_posts
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${COGNITO_ISSUER_URI}
+          jwk-set-uri: ${COGNITO_JWK_SET_URI}
+
+  servlet:
+    multipart:
+      enabled: false
+
+clients:
+  users:
+    base-url: ${CLIENTS_USERS_BASE_URL:http://localhost:8082}
+  interactions:
+    base-url: ${CLIENTS_INTERACTIONS_BASE_URL:http://localhost:8084}
+
+aws:
+  s3:
+    region: ${AWS_REGION:us-east-1}
+    audio-bucket: ${S3_AUDIO_BUCKET:heypudu-audio}
+    covers-bucket: ${S3_COVERS_BUCKET:heypudu-covers}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    com.heypudu.ms_posts: DEBUG
+    org.springframework.security: INFO

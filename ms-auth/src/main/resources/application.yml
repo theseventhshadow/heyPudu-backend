@@ -1,0 +1,54 @@
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${COGNITO_ISSUER_URI}
+          jwk-set-uri: ${COGNITO_JWK_SET_URI}
+
+clients:
+  users:
+    base-url: ${CLIENTS_USERS_BASE_URL}
+
+aws:
+  cognito:
+    region: ${AWS_REGION}
+    user-pool-id: ${COGNITO_USER_POOL_ID}
+
+logging:
+  level:
+    root: WARN
+    com.heypudu.ms_auth: INFO
+    org.springframework.security: WARN
+    org.hibernate: WARN
+    org.springframework.web.client: WARN
+    software.amazon.awssdk: WARN
+
+management:
+  endpoint:
+    health:
+      show-details: never
+  endpoints:
+    web:
+      exposure:
+        include: health

@@ -1,0 +1,86 @@
+services:
+  ms-auth:
+    build:
+      context: ./ms-auth
+    image: heypudu/ms-auth:latest
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      AWS_REGION: ${AWS_REGION}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      DB_URL: ${DB_URL_AUTH}
+      DB_USERNAME: ${DB_USERNAME_AUTH}
+      DB_PASSWORD: ${DB_PASSWORD_AUTH}
+      CLIENTS_USERS_BASE_URL: http://ms-users:8082
+    expose:
+      - "8081"
+    networks:
+      - heypudu-internal
+
+  ms-users:
+    build:
+      context: ./ms-users
+    image: heypudu/ms-users:latest
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      AWS_REGION: ${AWS_REGION}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      DB_URL: ${DB_URL_USERS}
+      DB_USERNAME: ${DB_USERNAME_USERS}
+      DB_PASSWORD: ${DB_PASSWORD_USERS}
+      CLIENTS_AUTH_BASE_URL: http://ms-auth:8081
+      CLIENTS_POSTS_BASE_URL: http://ms-posts:8083
+      S3_AVATARS_BUCKET: ${S3_AVATARS_BUCKET}
+    expose:
+      - "8082"
+    networks:
+      - heypudu-internal
+
+  ms-posts:
+    build:
+      context: ./ms-posts
+    image: heypudu/ms-posts:latest
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      AWS_REGION: ${AWS_REGION}
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      DB_URL: ${DB_URL_POSTS}
+      DB_USERNAME: ${DB_USERNAME_POSTS}
+      DB_PASSWORD: ${DB_PASSWORD_POSTS}
+      CLIENTS_USERS_BASE_URL: http://ms-users:8082
+      CLIENTS_INTERACTIONS_BASE_URL: http://ms-interactions:8084
+      S3_AUDIO_BUCKET: ${S3_AUDIO_BUCKET}
+      S3_COVERS_BUCKET: ${S3_COVERS_BUCKET}
+    expose:
+      - "8083"
+    networks:
+      - heypudu-internal
+
+  ms-interactions:
+    build:
+      context: ./ms-interactions
+    image: heypudu/ms-interactions:latest
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      DB_URL: ${DB_URL_INTERACTIONS}
+      DB_USERNAME: ${DB_USERNAME_INTERACTIONS}
+      DB_PASSWORD: ${DB_PASSWORD_INTERACTIONS}
+      CLIENTS_POSTS_BASE_URL: http://ms-posts:8083
+    expose:
+      - "8084"
+    networks:
+      - heypudu-internal
+
+networks:
+  heypudu-internal:
+    driver: bridge

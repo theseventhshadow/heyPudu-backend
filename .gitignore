@@ -1,0 +1,10 @@
+.env
+.env.production
+**/.env
+*.env.local
+**/.gradle/
+**/build/
+**/bin/
+.idea/
+.vscode/
+**/*.iml
