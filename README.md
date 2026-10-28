@@ -818,6 +818,30 @@ curl http://localhost:8084/actuator/health
 
 ## Despliegue
 
+### EC2 con Docker Compose y RDS
+
+El archivo `docker-compose.prod.yml` ejecuta los cuatro microservicios con el perfil
+`prod`, conectados a RDS y entre sí mediante una red Docker privada. No publica los
+puertos de los microservicios en el host; la entrada pública debe implementarse
+posteriormente mediante un Load Balancer o un proxy privado conectado a API Gateway.
+
+Preparación en EC2:
+
+1. Copiar `.env.production.example` como `.env.production`.
+2. Completar el archivo con el endpoint privado de RDS, credenciales por esquema,
+   Cognito y buckets S3.
+3. Ejecutar:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml build
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d
+docker compose --env-file .env.production -f docker-compose.prod.yml ps
+```
+
+`.env.production` está excluido de Git y no debe subirse al repositorio. En EC2 se
+recomienda asignar un IAM Role a la instancia para que los servicios accedan a S3,
+en lugar de guardar claves AWS en variables de entorno.
+
 ### EC2
 
 Cada microservicio se despliega en un contenedor Docker sobre una instancia EC2.
