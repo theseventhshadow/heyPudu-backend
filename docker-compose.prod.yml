@@ -13,8 +13,8 @@ services:
       DB_USERNAME: ${DB_USERNAME_AUTH}
       DB_PASSWORD: ${DB_PASSWORD_AUTH}
       CLIENTS_USERS_BASE_URL: http://ms-users:8082
-    expose:
-      - "8081"
+    ports:
+      - "8081:8081"
     mem_limit: 400m
     networks:
       - heypudu-internal
@@ -35,8 +35,8 @@ services:
       CLIENTS_AUTH_BASE_URL: http://ms-auth:8081
       CLIENTS_POSTS_BASE_URL: http://ms-posts:8083
       S3_AVATARS_BUCKET: ${S3_AVATARS_BUCKET}
-    expose:
-      - "8082"
+    ports:
+      - "8082:8082"
     mem_limit: 400m
     networks:
       - heypudu-internal
@@ -57,8 +57,8 @@ services:
       CLIENTS_INTERACTIONS_BASE_URL: http://ms-interactions:8084
       S3_AUDIO_BUCKET: ${S3_AUDIO_BUCKET}
       S3_COVERS_BUCKET: ${S3_COVERS_BUCKET}
-    expose:
-      - "8083"
+    ports:
+      - "8083:8083"
     mem_limit: 400m
     networks:
       - heypudu-internal
@@ -75,8 +75,8 @@ services:
       DB_USERNAME: ${DB_USERNAME_INTERACTIONS}
       DB_PASSWORD: ${DB_PASSWORD_INTERACTIONS}
       CLIENTS_POSTS_BASE_URL: http://ms-posts:8083
-    expose:
-      - "8084"
+    ports:
+      - "8084:8084"
     mem_limit: 400m
     networks:
       - heypudu-internal
