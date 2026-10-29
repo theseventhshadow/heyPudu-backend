@@ -1,9 +1,6 @@
 package com.heypudu.ms_users.repository;
 
 import com.heypudu.ms_users.model.Follow;
-import com.heypudu.ms_users.model.User;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,34 +16,6 @@ public interface FollowRepository extends JpaRepository<Follow, UUID> {
     Optional<Follow> findByFollowerIdAndFollowedId(UUID followerId, UUID followedId);
 
     boolean existsByFollowerIdAndFollowedId(UUID followerId, UUID followedId);
-
-    @Query(
-            value = """
-                    SELECT u FROM User u
-                    WHERE u.id IN (
-                        SELECT f.followerId FROM Follow f WHERE f.followedId = :userId
-                    )
-                    """,
-            countQuery = """
-                    SELECT COUNT(f) FROM Follow f
-                    WHERE f.followedId = :userId
-                    """
-    )
-    Page<User> findFollowersAsUsers(@Param("userId") UUID userId, Pageable pageable);
-
-    @Query(
-            value = """
-                    SELECT u FROM User u
-                    WHERE u.id IN (
-                        SELECT f.followedId FROM Follow f WHERE f.followerId = :userId
-                    )
-                    """,
-            countQuery = """
-                    SELECT COUNT(f) FROM Follow f
-                    WHERE f.followerId = :userId
-                    """
-    )
-    Page<User> findFollowingAsUsers(@Param("userId") UUID userId, Pageable pageable);
 
     @Query("SELECT f.followedId FROM Follow f WHERE f.followerId = :followerId")
     List<UUID> findFollowedIdsByFollowerId(@Param("followerId") UUID followerId);

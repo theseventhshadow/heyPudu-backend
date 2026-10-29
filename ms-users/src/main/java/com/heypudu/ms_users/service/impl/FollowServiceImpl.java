@@ -96,17 +96,17 @@ public class FollowServiceImpl implements FollowService {
         userRepository.updateFollowerCount(followed.getId(), DELTA_DOWN);
     }
 
-       @Override
+    @Override
     @Transactional(readOnly = true)
     public Page<UserSummaryResponse> listFollowers(UUID userId, Pageable pageable) {
-        Page<User> users = followRepository.findFollowersAsUsers(userId, pageable);
+        Page<User> users = userRepository.findFollowersOf(userId, pageable);
         return userMapper.toSummaryResponsePage(users, this::resolveAvatarUrl);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<UserSummaryResponse> listFollowing(UUID userId, Pageable pageable) {
-        Page<User> users = followRepository.findFollowingAsUsers(userId, pageable);
+        Page<User> users = userRepository.findFollowingOf(userId, pageable);
         return userMapper.toSummaryResponsePage(users, this::resolveAvatarUrl);
     }
 

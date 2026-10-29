@@ -31,6 +31,34 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             """)
     Page<User> searchByNameOrUsername(@Param("q") String query, Pageable pageable);
 
+    @Query(
+            value = """
+                    SELECT u FROM User u
+                    WHERE u.id IN (
+                        SELECT f.followerId FROM Follow f WHERE f.followedId = :userId
+                    )
+                    """,
+            countQuery = """
+                    SELECT COUNT(f) FROM Follow f
+                    WHERE f.followedId = :userId
+                    """
+    )
+    Page<User> findFollowersOf(@Param("userId") UUID userId, Pageable pageable);
+
+    @Query(
+            value = """
+                    SELECT u FROM User u
+                    WHERE u.id IN (
+                        SELECT f.followedId FROM Follow f WHERE f.followerId = :userId
+                    )
+                    """,
+            countQuery = """
+                    SELECT COUNT(f) FROM Follow f
+                    WHERE f.followerId = :userId
+                    """
+    )
+    Page<User> findFollowingOf(@Param("userId") UUID userId, Pageable pageable);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             UPDATE User u
