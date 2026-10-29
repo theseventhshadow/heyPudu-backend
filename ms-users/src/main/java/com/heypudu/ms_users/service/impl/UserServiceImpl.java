@@ -1,6 +1,9 @@
 package com.heypudu.ms_users.service.impl;
 
 import com.heypudu.ms_users.client.AuthClient;
+import com.heypudu.ms_users.client.ModerationClient;
+import com.heypudu.ms_users.dto.response.AuthorReportCountResponse;
+import com.heypudu.ms_users.dto.response.BanCandidateResponse;
 import com.heypudu.ms_users.dto.request.BanUserRequest;
 import com.heypudu.ms_users.dto.request.CreateUserProfileRequest;
 import com.heypudu.ms_users.dto.request.PresignedUrlRequest;
@@ -25,6 +28,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -43,17 +53,20 @@ public class UserServiceImpl implements UserService {
     private final S3Service s3Service;
     private final UserMapper userMapper;
     private final CognitoUserExtractor cognitoUserExtractor;
+    private final ModerationClient moderationClient;
 
     public UserServiceImpl(UserRepository userRepository,
                            AuthClient authClient,
                            S3Service s3Service,
                            UserMapper userMapper,
-                           CognitoUserExtractor cognitoUserExtractor) {
+                           CognitoUserExtractor cognitoUserExtractor,
+                           ModerationClient moderationClient) {
         this.userRepository = userRepository;
         this.authClient = authClient;
         this.s3Service = s3Service;
         this.userMapper = userMapper;
         this.cognitoUserExtractor = cognitoUserExtractor;
+        this.moderationClient = moderationClient;
     }
 
     @Override
@@ -279,6 +292,42 @@ public class UserServiceImpl implements UserService {
     public Page<UserProfileResponse> listAllUsers(Pageable pageable) {
         Page<User> users = userRepository.findAll(pageable);
         return users.map(this::toProfileResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<BanCandidateResponse> listBanCandidates(int threshold, Jwt jwt) {
+        String token = jwt.getTokenValue();
+
+        Map<UUID, Long> postCounts = toCountMap(moderationClient.getPostReportCounts(token));
+        Map<UUID, Long> commentCounts = toCountMap(moderationClient.getCommentReportCounts(token));
+
+        Set<UUID> authorIds = new HashSet<>(postCounts.keySet());
+        authorIds.addAll(commentCounts.keySet());
+
+        List<BanCandidateResponse> candidates = new ArrayList<>();
+        for (UUID authorId : authorIds) {
+            long fromPosts = postCounts.getOrDefault(authorId, 0L);
+            long fromComments = commentCounts.getOrDefault(authorId, 0L);
+            long total = fromPosts + fromComments;
+            if (total < threshold) {
+                continue;
+            }
+            userRepository.findByCognitoSub(authorId).ifPresent(user ->
+                    candidates.add(new BanCandidateResponse(
+                            toProfileResponse(user), total, fromPosts, fromComments)));
+        }
+
+        candidates.sort(Comparator.comparingLong(BanCandidateResponse::totalReports).reversed());
+        return candidates;
+    }
+
+    private Map<UUID, Long> toCountMap(List<AuthorReportCountResponse> counts) {
+        Map<UUID, Long> map = new HashMap<>();
+        for (AuthorReportCountResponse count : counts) {
+            map.merge(count.authorId(), count.totalReports(), Long::sum);
+        }
+        return map;
     }
 
     private User findCurrentUser(Jwt jwt) {

@@ -1,6 +1,7 @@
 package com.heypudu.ms_interactions.controller;
 
 import com.heypudu.ms_interactions.dto.request.CreateCommentReportRequest;
+import com.heypudu.ms_interactions.dto.response.AuthorReportCountResponse;
 import com.heypudu.ms_interactions.dto.response.CommentReportResponse;
 import com.heypudu.ms_interactions.service.CommentReportService;
 import jakarta.validation.Valid;
@@ -12,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -29,6 +31,11 @@ public class CommentReportController {
             @Valid @RequestBody CreateCommentReportRequest request,
             @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(service.report(commentId, request, jwt));
+    }
+
+    @GetMapping("/internal/comment-reports/counts")
+    public ResponseEntity<List<AuthorReportCountResponse>> listReportCounts() {
+        return ResponseEntity.ok(service.listReportCountsByAuthor());
     }
 
     @GetMapping("/admin/comment-reports")

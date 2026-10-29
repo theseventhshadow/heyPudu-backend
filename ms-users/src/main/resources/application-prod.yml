@@ -29,6 +29,8 @@ clients:
   posts:
     enabled: ${CLIENTS_POSTS_ENABLED:false}
     base-url: ${CLIENTS_POSTS_BASE_URL:http://localhost:8083}
+  interactions:
+    base-url: ${CLIENTS_INTERACTIONS_BASE_URL:http://localhost:8084}
 
 aws:
   s3:

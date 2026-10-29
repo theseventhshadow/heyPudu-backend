@@ -1,6 +1,7 @@
 package com.heypudu.ms_users.controller;
 
 import com.heypudu.ms_users.dto.request.BanUserRequest;
+import com.heypudu.ms_users.dto.response.BanCandidateResponse;
 import com.heypudu.ms_users.dto.response.UserProfileResponse;
 import com.heypudu.ms_users.service.UserService;
 import jakarta.validation.Valid;
@@ -16,8 +17,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -36,6 +39,14 @@ public class AdminUserController {
             @PageableDefault(size = 20, sort = "createdAt,desc") Pageable pageable) {
 
         return ResponseEntity.ok(userService.listAllUsers(pageable));
+    }
+
+    @GetMapping("/ban-candidates")
+    public ResponseEntity<List<BanCandidateResponse>> listBanCandidates(
+            @RequestParam(name = "threshold", defaultValue = "10") int threshold,
+            @AuthenticationPrincipal Jwt jwt) {
+
+        return ResponseEntity.ok(userService.listBanCandidates(threshold, jwt));
     }
 
     @PutMapping("/{userId}/ban")

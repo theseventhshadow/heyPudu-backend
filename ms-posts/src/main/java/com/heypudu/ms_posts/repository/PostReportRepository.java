@@ -4,8 +4,10 @@ import com.heypudu.ms_posts.model.PostReport;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -16,4 +18,13 @@ public interface PostReportRepository extends JpaRepository<PostReport, UUID> {
     Page<PostReport> findByStatus(String status, Pageable pageable);
 
     void deleteByPostId(UUID postId);
+
+    @Query("""
+            SELECT p.authorId, COUNT(r.id)
+            FROM PostReport r, Post p
+            WHERE p.id = r.postId
+              AND r.status <> 'DISMISSED'
+            GROUP BY p.authorId
+            """)
+    List<Object[]> countReportsByAuthor();
 }

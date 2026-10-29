@@ -1,6 +1,7 @@
 package com.heypudu.ms_posts.controller;
 
 import com.heypudu.ms_posts.dto.request.CreatePostReportRequest;
+import com.heypudu.ms_posts.dto.response.AuthorReportCountResponse;
 import com.heypudu.ms_posts.dto.response.PostReportResponse;
 import com.heypudu.ms_posts.service.PostReportService;
 import jakarta.validation.Valid;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -46,8 +48,12 @@ public class PostReportController {
         return ResponseEntity.ok(postReportService.listOpen(pageable));
     }
 
-    @PutMapping("/admin/posts/reports/{reportId}/{status}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/internal/posts/reports/counts")
+    public ResponseEntity<List<AuthorReportCountResponse>> listReportCounts() {
+        return ResponseEntity.ok(postReportService.listReportCountsByAuthor());
+    }
+
+    @PutMapping("/admin/posts/reports/{reportId}/{status}")    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PostReportResponse> updateStatus(
             @PathVariable UUID reportId,
             @PathVariable String status,

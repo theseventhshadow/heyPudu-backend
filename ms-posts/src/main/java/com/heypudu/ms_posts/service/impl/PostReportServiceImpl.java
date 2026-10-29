@@ -1,6 +1,7 @@
 package com.heypudu.ms_posts.service.impl;
 
 import com.heypudu.ms_posts.dto.request.CreatePostReportRequest;
+import com.heypudu.ms_posts.dto.response.AuthorReportCountResponse;
 import com.heypudu.ms_posts.dto.response.PostReportResponse;
 import com.heypudu.ms_posts.exception.BusinessException;
 import com.heypudu.ms_posts.exception.ResourceNotFoundException;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -86,8 +88,17 @@ public class PostReportServiceImpl implements PostReportService {
         return toResponse(report, post);
     }
 
-    private PostReportResponse toResponse(PostReport report, Post post) {
-        String audioUrl = post != null && post.getAudioKey() != null
+    @Override
+    @Transactional(readOnly = true)
+    public List<AuthorReportCountResponse> listReportCountsByAuthor() {
+        return reportRepository.countReportsByAuthor().stream()
+                .map(row -> new AuthorReportCountResponse(
+                        (UUID) row[0],
+                        ((Number) row[1]).longValue()))
+                .toList();
+    }
+
+    private PostReportResponse toResponse(PostReport report, Post post) {        String audioUrl = post != null && post.getAudioKey() != null
                 ? s3Service.generateAudioDownloadUrl(post.getAudioKey())
                 : null;
 

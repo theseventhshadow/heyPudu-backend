@@ -1,6 +1,7 @@
 package com.heypudu.ms_interactions.service.impl;
 
 import com.heypudu.ms_interactions.dto.request.CreateCommentReportRequest;
+import com.heypudu.ms_interactions.dto.response.AuthorReportCountResponse;
 import com.heypudu.ms_interactions.dto.response.CommentReportResponse;
 import com.heypudu.ms_interactions.exception.BusinessException;
 import com.heypudu.ms_interactions.exception.ResourceNotFoundException;
@@ -15,6 +16,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -63,6 +65,16 @@ public class CommentReportServiceImpl implements CommentReportService {
         report.setResolvedAt(Instant.now());
         report.setResolvedBy(userExtractor.extractSub(jwt));
         return toResponse(report);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AuthorReportCountResponse> listReportCountsByAuthor() {
+        return reportRepository.countReportsByAuthor().stream()
+                .map(row -> new AuthorReportCountResponse(
+                        (UUID) row[0],
+                        ((Number) row[1]).longValue()))
+                .toList();
     }
 
     private CommentReportResponse toResponse(CommentReport report) {

@@ -34,6 +34,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD_USERS}
       CLIENTS_AUTH_BASE_URL: http://ms-auth:8081
       CLIENTS_POSTS_BASE_URL: http://ms-posts:8083
+      CLIENTS_INTERACTIONS_BASE_URL: http://ms-interactions:8084
       S3_AVATARS_BUCKET: ${S3_AVATARS_BUCKET}
     ports:
       - "8082:8082"

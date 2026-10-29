@@ -47,4 +47,6 @@ public interface UserService {
     UserProfileResponse unverifyUser(UUID userId, Jwt jwt);
 
     Page<UserProfileResponse> listAllUsers(Pageable pageable);
+
+    java.util.List<com.heypudu.ms_users.dto.response.BanCandidateResponse> listBanCandidates(int threshold, Jwt jwt);
 }
