@@ -23,8 +23,9 @@ public interface FollowRepository extends JpaRepository<Follow, UUID> {
     @Query(
             value = """
                     SELECT u FROM User u
-                    JOIN Follow f ON f.followerId = u.id
-                    WHERE f.followedId = :userId
+                    WHERE u.id IN (
+                        SELECT f.followerId FROM Follow f WHERE f.followedId = :userId
+                    )
                     """,
             countQuery = """
                     SELECT COUNT(f) FROM Follow f
@@ -36,8 +37,9 @@ public interface FollowRepository extends JpaRepository<Follow, UUID> {
     @Query(
             value = """
                     SELECT u FROM User u
-                    JOIN Follow f ON f.followedId = u.id
-                    WHERE f.followerId = :userId
+                    WHERE u.id IN (
+                        SELECT f.followedId FROM Follow f WHERE f.followerId = :userId
+                    )
                     """,
             countQuery = """
                     SELECT COUNT(f) FROM Follow f
