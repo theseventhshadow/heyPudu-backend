@@ -4,6 +4,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx224m -XX:+ExitOnOutOfMemoryError
       AWS_REGION: ${AWS_REGION}
       COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
       COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
@@ -14,6 +15,7 @@ services:
       CLIENTS_USERS_BASE_URL: http://ms-users:8082
     expose:
       - "8081"
+    mem_limit: 400m
     networks:
       - heypudu-internal
 
@@ -22,6 +24,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx224m -XX:+ExitOnOutOfMemoryError
       AWS_REGION: ${AWS_REGION}
       COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
       COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
@@ -34,6 +37,7 @@ services:
       S3_AVATARS_BUCKET: ${S3_AVATARS_BUCKET}
     expose:
       - "8082"
+    mem_limit: 400m
     networks:
       - heypudu-internal
 
@@ -42,6 +46,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx224m -XX:+ExitOnOutOfMemoryError
       AWS_REGION: ${AWS_REGION}
       COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
       COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
@@ -54,6 +59,7 @@ services:
       S3_COVERS_BUCKET: ${S3_COVERS_BUCKET}
     expose:
       - "8083"
+    mem_limit: 400m
     networks:
       - heypudu-internal
 
@@ -62,6 +68,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx224m -XX:+ExitOnOutOfMemoryError
       COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
       COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
       DB_URL: ${DB_URL_INTERACTIONS}
@@ -70,6 +77,7 @@ services:
       CLIENTS_POSTS_BASE_URL: http://ms-posts:8083
     expose:
       - "8084"
+    mem_limit: 400m
     networks:
       - heypudu-internal
 
