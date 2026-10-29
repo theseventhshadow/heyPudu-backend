@@ -28,7 +28,7 @@ public class PostMapper {
         );
     }
 
-    public PostSummaryResponse toPostSummaryResponse(Post post, String coverImageUrl) {
+    public PostSummaryResponse toPostSummaryResponse(Post post, String coverImageUrl, String audioUrl) {
         return new PostSummaryResponse(
                 post.getId(),
                 post.getAuthorId(),
@@ -37,13 +37,18 @@ public class PostMapper {
                 post.getType(),
                 post.getTitle(),
                 coverImageUrl,
+                audioUrl,
                 post.getLikeCount(),
                 post.getCommentCount(),
                 post.getCreatedAt()
         );
     }
 
-    public Page<PostSummaryResponse> toPostSummaryResponsePage(Page<Post> posts, java.util.function.Function<Post, String> coverUrlResolver) {
-        return posts.map(post -> toPostSummaryResponse(post, coverUrlResolver.apply(post)));
+    public Page<PostSummaryResponse> toPostSummaryResponsePage(
+            Page<Post> posts,
+            java.util.function.Function<Post, String> coverUrlResolver,
+            java.util.function.Function<Post, String> audioUrlResolver) {
+        return posts.map(post -> toPostSummaryResponse(
+                post, coverUrlResolver.apply(post), audioUrlResolver.apply(post)));
     }
 }

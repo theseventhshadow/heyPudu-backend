@@ -67,7 +67,14 @@ public class FeedServiceImpl implements FeedService {
     }
 
     private Page<PostSummaryResponse> toSummaryPage(Page<Post> posts) {
-        return postMapper.toPostSummaryResponsePage(posts, this::resolveCoverUrl);
+        return postMapper.toPostSummaryResponsePage(
+                posts, this::resolveCoverUrl, this::resolveAudioUrl);
+    }
+
+    private String resolveAudioUrl(Post post) {
+        return post.getAudioKey() != null
+                ? s3Service.generateAudioDownloadUrl(post.getAudioKey())
+                : null;
     }
 
     private String resolveCoverUrl(Post post) {

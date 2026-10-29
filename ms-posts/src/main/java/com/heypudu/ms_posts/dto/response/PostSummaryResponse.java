@@ -11,6 +11,7 @@ public record PostSummaryResponse(
         String type,
         String title,
         String coverImageUrl,
+        String audioUrl,
         int likeCount,
         int commentCount,
         Instant createdAt
