@@ -42,7 +42,7 @@ public class UserClient {
     public List<UUID> getFollowingIds(UUID userId, String jwt) {
         try {
             UUID[] following = usersRestClient.get()
-                    .uri("/api/v1/users/{id}/following/ids", userId)
+                    .uri("/api/v1/internal/users/{id}/following/ids", userId)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwt)
                     .retrieve()
                     .body(UUID[].class);
