@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -50,13 +51,11 @@ public class FeedServiceImpl implements FeedService {
     public Page<PostSummaryResponse> getPersonalFeed(Jwt jwt, Pageable pageable) {
         UUID userId = cognitoUserExtractor.extractSub(jwt);
 
-        List<UUID> followingIds = userClient.getFollowingIds(userId, jwt.getTokenValue());
+        List<UUID> authorIds = new ArrayList<>();
+        authorIds.add(userId);
+        authorIds.addAll(userClient.getFollowingIds(userId, jwt.getTokenValue()));
 
-        if (followingIds.isEmpty()) {
-            return Page.empty(pageable);
-        }
-
-        Page<Post> posts = postRepository.findByAuthorIdIn(followingIds, pageable);
+        Page<Post> posts = postRepository.findByAuthorIdIn(authorIds, pageable);
         return toSummaryPage(posts);
     }
 
