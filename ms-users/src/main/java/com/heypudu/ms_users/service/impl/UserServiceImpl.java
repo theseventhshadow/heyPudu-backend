@@ -170,6 +170,15 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public UserSummaryResponse getUserSummaryByCognitoSub(UUID cognitoSub) {
+        User user = userRepository.findByCognitoSub(cognitoSub)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Usuario no encontrado para cognito_sub: " + cognitoSub));
+        return userMapper.toSummaryResponse(user, resolveAvatarUrl(user));
+    }
+
+    @Override
     public PresignedUrlResponse generateAvatarUploadUrl(PresignedUrlRequest request, Jwt jwt) {
         return s3Service.generateAvatarUploadUrl(request);
     }

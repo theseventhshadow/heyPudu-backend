@@ -116,6 +116,19 @@ public class FollowServiceImpl implements FollowService {
         return followRepository.findFollowedIdsByFollowerId(userId);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> listFollowingCognitoSubs(UUID cognitoSub) {
+        User user = findActiveUserByCognitoSub(cognitoSub);
+        List<UUID> followedIds = followRepository.findFollowedIdsByFollowerId(user.getId());
+        if (followedIds.isEmpty()) {
+            return List.of();
+        }
+        return userRepository.findAllById(followedIds).stream()
+                .map(User::getCognitoSub)
+                .toList();
+    }
+
     private User findActiveUserByCognitoSub(UUID cognitoSub) {
         User user = userRepository.findByCognitoSub(cognitoSub)
                 .orElseThrow(() -> new ResourceNotFoundException(

@@ -46,6 +46,18 @@ public class InternalUserController {
         return ResponseEntity.ok(followService.listFollowingIds(userId));
     }
 
+    @GetMapping("/by-cognito/{cognitoSub}/summary")
+    public ResponseEntity<UserSummaryResponse> getUserSummaryByCognitoSub(
+            @PathVariable UUID cognitoSub) {
+        return ResponseEntity.ok(userService.getUserSummaryByCognitoSub(cognitoSub));
+    }
+
+    @GetMapping("/by-cognito/{cognitoSub}/following/ids")
+    public ResponseEntity<List<UUID>> listFollowingCognitoSubs(
+            @PathVariable UUID cognitoSub) {
+        return ResponseEntity.ok(followService.listFollowingCognitoSubs(cognitoSub));
+    }
+
     @GetMapping("/{userId}/exists")
     public ResponseEntity<Boolean> exists(@PathVariable UUID userId) {
         try {

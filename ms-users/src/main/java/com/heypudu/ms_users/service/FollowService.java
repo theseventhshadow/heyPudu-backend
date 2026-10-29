@@ -20,4 +20,6 @@ public interface FollowService {
     Page<UserSummaryResponse> listFollowing(UUID userId, Pageable pageable);
 
     List<UUID> listFollowingIds(UUID userId);
+
+    List<UUID> listFollowingCognitoSubs(UUID cognitoSub);
 }
