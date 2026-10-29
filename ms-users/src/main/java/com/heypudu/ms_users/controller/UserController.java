@@ -8,9 +8,12 @@ import com.heypudu.ms_users.dto.response.UserPublicResponse;
 import com.heypudu.ms_users.dto.response.UserSummaryResponse;
 import com.heypudu.ms_users.service.UserService;
 import jakarta.validation.Valid;
+
+import java.net.URI;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -53,6 +56,13 @@ public class UserController {
     public ResponseEntity<Void> deleteMyAccount(@AuthenticationPrincipal Jwt jwt) {
         userService.deleteCurrentUser(jwt);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/by-cognito/{cognitoSub}/avatar")
+    public ResponseEntity<Void> getAvatarByCognitoSub(@PathVariable UUID cognitoSub) {
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(userService.getAvatarRedirectUrlByCognitoSub(cognitoSub)))
+                .build();
     }
 
     @GetMapping("/{userId}")

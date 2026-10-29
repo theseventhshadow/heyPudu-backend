@@ -65,7 +65,7 @@ public class PostServiceImpl implements PostService {
         Post post = new Post(
                 authorId,
                 author.username(),
-                author.avatarUrl(),
+                null,
                 request.type(),
                 request.title(),
                 request.content(),

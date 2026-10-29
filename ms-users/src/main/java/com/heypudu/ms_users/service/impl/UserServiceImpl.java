@@ -179,6 +179,18 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public String getAvatarRedirectUrlByCognitoSub(UUID cognitoSub) {
+        User user = userRepository.findByCognitoSub(cognitoSub)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Usuario no encontrado para cognito_sub: " + cognitoSub));
+        if (user.getAvatarKey() == null) {
+            throw new ResourceNotFoundException("El usuario no tiene avatar");
+        }
+        return s3Service.generateAvatarDownloadUrl(user.getAvatarKey());
+    }
+
+    @Override
     public PresignedUrlResponse generateAvatarUploadUrl(PresignedUrlRequest request, Jwt jwt) {
         return s3Service.generateAvatarUploadUrl(request);
     }

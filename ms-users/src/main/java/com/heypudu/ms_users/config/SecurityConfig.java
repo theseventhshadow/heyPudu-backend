@@ -41,6 +41,7 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                .requestMatchers("/api/v1/users/by-cognito/*/avatar").permitAll()
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2
