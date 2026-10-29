@@ -191,6 +191,15 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
+    public void updatePostCount(UUID cognitoSub, int delta) {
+        User user = userRepository.findByCognitoSub(cognitoSub)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Usuario no encontrado para cognito_sub: " + cognitoSub));
+        userRepository.updatePostCount(user.getId(), delta);
+    }
+
+    @Override
     public PresignedUrlResponse generateAvatarUploadUrl(PresignedUrlRequest request, Jwt jwt) {
         return s3Service.generateAvatarUploadUrl(request);
     }

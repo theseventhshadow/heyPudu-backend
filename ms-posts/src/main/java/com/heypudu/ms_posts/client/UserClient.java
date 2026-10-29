@@ -39,8 +39,7 @@ public class UserClient {
         }
     }
 
-    public List<UUID> getFollowingIds(UUID userId, String jwt) {
-        try {
+    public List<UUID> getFollowingIds(UUID userId, String jwt) {        try {
             UUID[] following = usersRestClient.get()
                     .uri("/api/v1/internal/users/by-cognito/{id}/following/ids", userId)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwt)
@@ -53,6 +52,21 @@ public class UserClient {
                     userId, ex.getMessage());
             throw new BusinessException(
                     "No se pudo obtener la lista de seguidos del usuario con id: " + userId);
+        }
+    }
+
+    public void adjustPostCount(UUID authorId, int delta, String jwt) {
+        try {
+            usersRestClient.put()
+                    .uri("/api/v1/internal/users/by-cognito/{id}/post-count?delta={delta}", authorId, delta)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwt)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientException ex) {
+            log.warn("No se pudo actualizar el contador de publicaciones del usuario {}: {}",
+                    authorId, ex.getMessage());
+            throw new BusinessException(
+                    "No se pudo actualizar el contador de publicaciones del usuario con id: " + authorId);
         }
     }
 }

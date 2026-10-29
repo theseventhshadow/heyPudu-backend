@@ -9,6 +9,19 @@ import org.springframework.stereotype.Component;
 @Component
 public class PostMapper {
 
+    private static final int CONTENT_PREVIEW_LENGTH = 200;
+
+    private static String previewOf(String content) {
+        if (content == null) {
+            return null;
+        }
+        String trimmed = content.strip();
+        if (trimmed.length() <= CONTENT_PREVIEW_LENGTH) {
+            return trimmed;
+        }
+        return trimmed.substring(0, CONTENT_PREVIEW_LENGTH).stripTrailing() + "...";
+    }
+
     public PostResponse toPostResponse(Post post, String audioUrl, String coverImageUrl) {
         return new PostResponse(
                 post.getId(),
@@ -36,8 +49,10 @@ public class PostMapper {
                 post.getAuthorAvatarUrl(),
                 post.getType(),
                 post.getTitle(),
+                previewOf(post.getContent()),
                 coverImageUrl,
                 audioUrl,
+                post.getAudioDurationSeconds(),
                 post.getLikeCount(),
                 post.getCommentCount(),
                 post.getCreatedAt()

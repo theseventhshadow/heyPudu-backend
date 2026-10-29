@@ -48,4 +48,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             WHERE u.id = :userId
             """)
     int updateFollowingCount(@Param("userId") UUID userId, @Param("delta") int delta);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE User u
+            SET u.postCount = CASE WHEN u.postCount + :delta < 0 THEN 0 ELSE u.postCount + :delta END,
+                u.updatedAt = CURRENT_TIMESTAMP
+            WHERE u.id = :userId
+            """)
+    int updatePostCount(@Param("userId") UUID userId, @Param("delta") int delta);
 }

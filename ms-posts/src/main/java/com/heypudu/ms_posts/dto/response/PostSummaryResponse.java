@@ -10,8 +10,10 @@ public record PostSummaryResponse(
         String authorAvatarUrl,
         String type,
         String title,
+        String content,
         String coverImageUrl,
         String audioUrl,
+        Integer audioDurationSeconds,
         int likeCount,
         int commentCount,
         Instant createdAt

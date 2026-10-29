@@ -76,6 +76,7 @@ public class PostServiceImpl implements PostService {
         );
 
         Post saved = postRepository.save(post);
+        userClient.adjustPostCount(authorId, 1, jwt.getTokenValue());
         return toPostResponse(saved);
     }
 
@@ -148,6 +149,7 @@ public class PostServiceImpl implements PostService {
         }
 
         postRepository.delete(post);
+        userClient.adjustPostCount(post.getAuthorId(), -1, jwt.getTokenValue());
     }
 
     @Override
@@ -171,6 +173,7 @@ public class PostServiceImpl implements PostService {
             s3Service.deleteCover(post.getCoverImageKey());
         }
         postRepository.delete(post);
+        userClient.adjustPostCount(post.getAuthorId(), -1, jwt.getTokenValue());
     }
 
     @Override

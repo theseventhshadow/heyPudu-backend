@@ -31,8 +31,7 @@ Este README es la **fuente de verdad** del backend. Debe contener todo lo necesa
 
 **heyPudú!** es una red social de audio breve. Los usuarios pueden:
 
-- Publicar **briefcasts**: audios de máximo 5 minutos, con portada opcional.
-- Publicar texto.
+- Publicar **briefcasts**: audios de máximo 5 minutos, con título, portada y texto descriptivo opcionales.
 - Dar "me gusta" y comentar publicaciones.
 - Seguir a otros usuarios.
 - Ver y editar su perfil.
@@ -81,7 +80,7 @@ Los usuarios se autentican con **AWS Cognito**. Los administradores pueden banea
 - **Java 25**
 - **Spring Boot 3.5.x**
 - **Gradle** (cada microservicio con su propio `build.gradle`)
-- **PostgreSQL** (una instancia RDS, esquemas separados)
+- **PostgreSQL** (instancia administrada en Neon, esquemas separados)
 - **AWS Cognito** (autenticación)
 - **AWS S3** (almacenamiento de audio y portadas)
 - **AWS API Gateway** (enrutamiento y validación de JWT)
@@ -821,28 +820,33 @@ curl http://localhost:8084/actuator/health
 ### EC2 con Docker Compose y PostgreSQL externo
 
 El archivo `docker-compose.prod.yml` descarga las cuatro imágenes desde Docker Hub,
-ejecuta los microservicios con el perfil `prod`, los conecta a PostgreSQL externo y
-los comunica entre sí mediante una red Docker privada. No publica los
-puertos de los microservicios en el host; la entrada pública debe implementarse
-posteriormente mediante un Load Balancer o un proxy privado conectado a API Gateway.
+ejecuta los microservicios con el perfil `prod`, los conecta a PostgreSQL externo
+(Neon) y los comunica entre sí mediante una red Docker privada. Publica los puertos
+`8081-8084` para el Load Balancer, con límites de memoria por contenedor.
+
+Cadena pública: Vercel → API Gateway HTTP API (`ANY /{proxy+}`) → ALB → EC2.
+La configuración completa está en `../DESPLIEGUE-AWS.md`.
 
 Preparación en EC2:
 
 1. Iniciar sesión en Docker Hub con `docker login`.
-2. Copiar `.env.production.example` como `.env.production`.
-2. Completar el archivo con el endpoint privado de RDS, credenciales por esquema,
-   Cognito y buckets S3.
-3. Ejecutar:
+2. Crear swap de 2 GB **antes** de arrancar los contenedores.
+3. Copiar `.env.production.example` como `.env` y completarlo con la cadena de
+   conexión de Neon, credenciales por esquema, Cognito y buckets S3.
+4. Ejecutar:
 
 ```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml pull
-docker compose --env-file .env.production -f docker-compose.prod.yml up -d
-docker compose --env-file .env.production -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml ps
 ```
 
-`.env.production` está excluido de Git y no debe subirse al repositorio. En EC2 se
-recomienda asignar un IAM Role a la instancia para que los servicios accedan a S3,
-en lugar de guardar claves AWS en variables de entorno.
+`.env` está excluido de Git y no debe subirse al repositorio. La EC2 debe tener
+asignado un IAM Role (`LabInstanceRole` en AWS Academy) con permisos sobre los
+tres buckets S3.
+
+> La versión de Docker Compose instalada en Amazon Linux 2023 no soporta
+> `--env-file`; por eso se usa el archivo `.env` automático.
 
 ### EC2
 

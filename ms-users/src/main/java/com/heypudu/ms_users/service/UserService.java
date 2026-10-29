@@ -34,6 +34,8 @@ public interface UserService {
 
     String getAvatarRedirectUrlByCognitoSub(UUID cognitoSub);
 
+    void updatePostCount(UUID cognitoSub, int delta);
+
     PresignedUrlResponse generateAvatarUploadUrl(PresignedUrlRequest request, Jwt jwt);
 
     UserProfileResponse banUser(UUID userId, BanUserRequest request, Jwt jwt);
