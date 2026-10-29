@@ -38,7 +38,7 @@ public class CommentReportServiceImpl implements CommentReportService {
             throw new ResourceNotFoundException("Comentario no encontrado con id: " + commentId);
         }
         UUID reporterId = userExtractor.extractSub(jwt);
-        if (reportRepository.existsByCommentIdAndReporterId(commentId, reporterId)) {
+        if (reportRepository.existsByCommentIdAndReporterIdAndStatus(commentId, reporterId, "OPEN")) {
             throw new BusinessException("Ya reportaste este comentario");
         }
         return toResponse(reportRepository.save(new CommentReport(
@@ -53,7 +53,7 @@ public class CommentReportServiceImpl implements CommentReportService {
 
     @Override
     @Transactional
-    public CommentReportResponse updateStatus(UUID reportId, String status) {
+    public CommentReportResponse updateStatus(UUID reportId, String status, Jwt jwt) {
         if (!status.equals("RESOLVED") && !status.equals("DISMISSED")) {
             throw new BusinessException("Estado de reporte no válido");
         }
@@ -61,6 +61,7 @@ public class CommentReportServiceImpl implements CommentReportService {
                 .orElseThrow(() -> new ResourceNotFoundException("Reporte no encontrado con id: " + reportId));
         report.setStatus(status);
         report.setResolvedAt(Instant.now());
+        report.setResolvedBy(userExtractor.extractSub(jwt));
         return toResponse(report);
     }
 

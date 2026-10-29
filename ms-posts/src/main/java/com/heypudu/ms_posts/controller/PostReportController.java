@@ -50,7 +50,8 @@ public class PostReportController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PostReportResponse> updateStatus(
             @PathVariable UUID reportId,
-            @PathVariable String status) {
-        return ResponseEntity.ok(postReportService.updateStatus(reportId, status.toUpperCase()));
+            @PathVariable String status,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(postReportService.updateStatus(reportId, status.toUpperCase(), jwt));
     }
 }

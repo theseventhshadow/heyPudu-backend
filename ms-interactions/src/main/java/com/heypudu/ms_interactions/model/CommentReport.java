@@ -5,9 +5,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "comment_reports", uniqueConstraints = @UniqueConstraint(
-        name = "uq_comment_reports_comment_reporter",
-        columnNames = {"comment_id", "reporter_id"}))
+@Table(name = "comment_reports")
 public class CommentReport {
 
     @Id
@@ -32,6 +30,9 @@ public class CommentReport {
     @Column(name = "resolved_at")
     private Instant resolvedAt;
 
+    @Column(name = "resolved_by")
+    private UUID resolvedBy;
+
     protected CommentReport() {
     }
 
@@ -51,5 +52,7 @@ public class CommentReport {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getResolvedAt() { return resolvedAt; }
     public void setStatus(String status) { this.status = status; }
+    public UUID getResolvedBy() { return resolvedBy; }
     public void setResolvedAt(Instant resolvedAt) { this.resolvedAt = resolvedAt; }
+    public void setResolvedBy(UUID resolvedBy) { this.resolvedBy = resolvedBy; }
 }

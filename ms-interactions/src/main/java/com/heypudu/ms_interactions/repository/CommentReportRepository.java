@@ -7,6 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.UUID;
 
 public interface CommentReportRepository extends JpaRepository<CommentReport, UUID> {
-    boolean existsByCommentIdAndReporterId(UUID commentId, UUID reporterId);
+    boolean existsByCommentIdAndReporterIdAndStatus(UUID commentId, UUID reporterId, String status);
     Page<CommentReport> findByStatus(String status, Pageable pageable);
 }

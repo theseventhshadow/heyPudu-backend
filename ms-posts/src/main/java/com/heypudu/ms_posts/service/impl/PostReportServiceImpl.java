@@ -50,7 +50,7 @@ public class PostReportServiceImpl implements PostReportService {
                         "Publicacion no encontrada con id: " + postId));
 
         UUID reporterId = cognitoUserExtractor.extractSub(jwt);
-        if (reportRepository.existsByPostIdAndReporterId(postId, reporterId)) {
+        if (reportRepository.existsByPostIdAndReporterIdAndStatus(postId, reporterId, STATUS_OPEN)) {
             throw new BusinessException("Ya reportaste esta publicacion");
         }
 
@@ -70,7 +70,7 @@ public class PostReportServiceImpl implements PostReportService {
 
     @Override
     @Transactional
-    public PostReportResponse updateStatus(UUID reportId, String status) {
+    public PostReportResponse updateStatus(UUID reportId, String status, Jwt jwt) {
         if (!STATUS_RESOLVED.equals(status) && !STATUS_DISMISSED.equals(status)) {
             throw new BusinessException("Estado de reporte no valido");
         }
@@ -80,6 +80,7 @@ public class PostReportServiceImpl implements PostReportService {
 
         report.setStatus(status);
         report.setResolvedAt(Instant.now());
+        report.setResolvedBy(cognitoUserExtractor.extractSub(jwt));
 
         Post post = postRepository.findById(report.getPostId()).orElse(null);
         return toResponse(report, post);

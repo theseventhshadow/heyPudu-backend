@@ -11,7 +11,7 @@ import java.util.UUID;
 @Repository
 public interface PostReportRepository extends JpaRepository<PostReport, UUID> {
 
-    boolean existsByPostIdAndReporterId(UUID postId, UUID reporterId);
+    boolean existsByPostIdAndReporterIdAndStatus(UUID postId, UUID reporterId, String status);
 
     Page<PostReport> findByStatus(String status, Pageable pageable);
 

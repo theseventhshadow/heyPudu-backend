@@ -12,9 +12,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "post_reports", uniqueConstraints = @UniqueConstraint(
-        name = "uq_post_reports_post_reporter",
-        columnNames = {"post_id", "reporter_id"}))
+@Table(name = "post_reports")
 public class PostReport {
 
     @Id
@@ -39,6 +37,9 @@ public class PostReport {
 
     @Column(name = "resolved_at")
     private Instant resolvedAt;
+
+    @Column(name = "resolved_by")
+    private UUID resolvedBy;
 
     protected PostReport() {
     }
@@ -79,11 +80,19 @@ public class PostReport {
         return resolvedAt;
     }
 
+    public UUID getResolvedBy() {
+        return resolvedBy;
+    }
+
     public void setStatus(String status) {
         this.status = status;
     }
 
     public void setResolvedAt(Instant resolvedAt) {
         this.resolvedAt = resolvedAt;
+    }
+
+    public void setResolvedBy(UUID resolvedBy) {
+        this.resolvedBy = resolvedBy;
     }
 }

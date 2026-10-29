@@ -14,5 +14,5 @@ public interface PostReportService {
 
     Page<PostReportResponse> listOpen(Pageable pageable);
 
-    PostReportResponse updateStatus(UUID reportId, String status);
+    PostReportResponse updateStatus(UUID reportId, String status, Jwt jwt);
 }

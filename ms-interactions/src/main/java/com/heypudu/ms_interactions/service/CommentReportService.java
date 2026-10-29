@@ -10,5 +10,5 @@ import java.util.UUID;
 public interface CommentReportService {
     CommentReportResponse report(UUID commentId, CreateCommentReportRequest request, Jwt jwt);
     Page<CommentReportResponse> listOpen(Pageable pageable);
-    CommentReportResponse updateStatus(UUID reportId, String status);
+    CommentReportResponse updateStatus(UUID reportId, String status, Jwt jwt);
 }

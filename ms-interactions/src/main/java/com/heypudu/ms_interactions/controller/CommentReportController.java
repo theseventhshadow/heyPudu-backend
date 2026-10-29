@@ -42,7 +42,8 @@ public class CommentReportController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<CommentReportResponse> updateStatus(
             @PathVariable UUID reportId,
-            @PathVariable String status) {
-        return ResponseEntity.ok(service.updateStatus(reportId, status.toUpperCase()));
+            @PathVariable String status,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(service.updateStatus(reportId, status.toUpperCase(), jwt));
     }
 }
