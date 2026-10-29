@@ -117,14 +117,9 @@ public class PostServiceImpl implements PostService {
         }
 
         post.setTitle(request.title());
+        post.setContent(request.content());
         post.setCoverImageKey(request.coverImageKey());
         post.setUpdatedAt(Instant.now());
-
-        if (TYPE_TEXT.equals(post.getType())) {
-            post.setContent(request.content());
-        } else if (request.content() != null && !request.content().isBlank()) {
-            throw new BusinessException("No se puede asignar contenido de texto a una publicacion de audio");
-        }
 
         Post saved = postRepository.save(post);
         return toPostResponse(saved);
@@ -218,9 +213,6 @@ public class PostServiceImpl implements PostService {
             }
             if (request.audioDurationSeconds() == null) {
                 throw new BusinessException("La duracion del audio es obligatoria para publicaciones de tipo AUDIO");
-            }
-            if (request.content() != null && !request.content().isBlank()) {
-                throw new BusinessException("No se puede enviar contenido de texto en una publicacion de tipo AUDIO");
             }
         }
     }
