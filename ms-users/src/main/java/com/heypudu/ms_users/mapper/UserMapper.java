@@ -39,6 +39,7 @@ public class UserMapper {
     public UserPublicResponse toPublicResponse(User user, String avatarUrl) {
         return new UserPublicResponse(
                 user.getId(),
+                user.getCognitoSub(),
                 user.getName(),
                 user.getUsername(),
                 user.getBio(),

@@ -5,6 +5,7 @@ import java.util.UUID;
 
 public record UserPublicResponse(
         UUID id,
+        UUID cognitoSub,
         String name,
         String username,
         String bio,
