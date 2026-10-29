@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_TOOL_OPTIONS: -Xms64m -Xmx224m -XX:+ExitOnOutOfMemoryError
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=96m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
       AWS_REGION: ${AWS_REGION}
       COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
       COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
@@ -24,7 +24,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_TOOL_OPTIONS: -Xms64m -Xmx224m -XX:+ExitOnOutOfMemoryError
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=96m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
       AWS_REGION: ${AWS_REGION}
       COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
       COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
@@ -46,7 +46,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_TOOL_OPTIONS: -Xms64m -Xmx224m -XX:+ExitOnOutOfMemoryError
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=96m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
       AWS_REGION: ${AWS_REGION}
       COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
       COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
@@ -68,7 +68,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_TOOL_OPTIONS: -Xms64m -Xmx224m -XX:+ExitOnOutOfMemoryError
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx192m -Xss512k -XX:MaxMetaspaceSize=96m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
       COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
       COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
       DB_URL: ${DB_URL_INTERACTIONS}
