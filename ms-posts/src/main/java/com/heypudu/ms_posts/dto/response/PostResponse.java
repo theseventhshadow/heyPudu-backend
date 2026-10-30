@@ -7,6 +7,7 @@ public record PostResponse(
         UUID id,
         UUID authorId,
         String authorUsername,
+        String authorName,
         String authorAvatarUrl,
         String type,
         String title,
