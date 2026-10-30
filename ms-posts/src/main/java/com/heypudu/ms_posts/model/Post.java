@@ -25,6 +25,9 @@ public class Post {
     @Column(name = "author_username", nullable = false, length = 50)
     private String authorUsername;
 
+    @Column(name = "author_name", length = 80)
+    private String authorName;
+
     @Column(name = "author_avatar_url", length = 500)
     private String authorAvatarUrl;
 
@@ -63,6 +66,7 @@ public class Post {
 
     public Post(UUID authorId,
                 String authorUsername,
+                String authorName,
                 String authorAvatarUrl,
                 String type,
                 String title,
@@ -73,6 +77,7 @@ public class Post {
                 Instant createdAt) {
         this.authorId = authorId;
         this.authorUsername = authorUsername;
+        this.authorName = authorName;
         this.authorAvatarUrl = authorAvatarUrl;
         this.type = type;
         this.title = title;
@@ -108,6 +113,14 @@ public class Post {
 
     public void setAuthorUsername(String authorUsername) {
         this.authorUsername = authorUsername;
+    }
+
+    public String getAuthorName() {
+        return authorName;
+    }
+
+    public void setAuthorName(String authorName) {
+        this.authorName = authorName;
     }
 
     public String getAuthorAvatarUrl() {
