@@ -39,6 +39,27 @@ spring:
           issuer-uri: ${COGNITO_ISSUER_URI}
           jwk-set-uri: ${COGNITO_JWK_SET_URI}
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:heypudu}
+    password: ${RABBITMQ_PASSWORD:devpassword}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
+        # Un rechazo va a la DLQ, nunca vuelve a la cola indefinidamente.
+        default-requeue-rejected: false
+        retry:
+          enabled: false
+
+rabbit:
+  topology:
+    message-ttl-ms: ${RABBIT_MSG_TTL_MS:3600000}
+    max-length: ${RABBIT_MAX_LENGTH:10000}
+    delivery-limit: ${RABBIT_DELIVERY_LIMIT:3}
+
 clients:
   posts:
     base-url: ${CLIENTS_POSTS_BASE_URL:http://localhost:8083}

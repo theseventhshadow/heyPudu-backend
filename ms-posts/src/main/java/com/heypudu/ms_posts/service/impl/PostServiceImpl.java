@@ -1,6 +1,5 @@
 package com.heypudu.ms_posts.service.impl;
 
-import com.heypudu.ms_posts.client.InteractionClient;
 import com.heypudu.ms_posts.client.UserClient;
 import com.heypudu.ms_posts.dto.request.CreatePostRequest;
 import com.heypudu.ms_posts.dto.request.PresignedUrlRequest;
@@ -11,6 +10,7 @@ import com.heypudu.ms_posts.dto.response.UserSummaryResponse;
 import com.heypudu.ms_posts.exception.BusinessException;
 import com.heypudu.ms_posts.exception.ResourceNotFoundException;
 import com.heypudu.ms_posts.mapper.PostMapper;
+import com.heypudu.ms_posts.messaging.PostEventPublisher;
 import com.heypudu.ms_posts.model.Post;
 import com.heypudu.ms_posts.repository.PostRepository;
 import com.heypudu.ms_posts.security.CognitoUserExtractor;
@@ -34,20 +34,20 @@ public class PostServiceImpl implements PostService {
 
     private final PostRepository postRepository;
     private final UserClient userClient;
-    private final InteractionClient interactionClient;
+    private final PostEventPublisher postEventPublisher;
     private final S3Service s3Service;
     private final PostMapper postMapper;
     private final CognitoUserExtractor cognitoUserExtractor;
 
     public PostServiceImpl(PostRepository postRepository,
                            UserClient userClient,
-                           InteractionClient interactionClient,
+                           PostEventPublisher postEventPublisher,
                            S3Service s3Service,
                            PostMapper postMapper,
                            CognitoUserExtractor cognitoUserExtractor) {
         this.postRepository = postRepository;
         this.userClient = userClient;
-        this.interactionClient = interactionClient;
+        this.postEventPublisher = postEventPublisher;
         this.s3Service = s3Service;
         this.postMapper = postMapper;
         this.cognitoUserExtractor = cognitoUserExtractor;
@@ -140,7 +140,8 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException("No puedes eliminar una publicacion que no es tuya");
         }
 
-        interactionClient.deleteInteractionsByPost(postId, jwt.getTokenValue());
+        // Asincrono: ms-interactions borra likes y comentarios al consumir el comando.
+        postEventPublisher.publishPostDeleted(postId);
 
         if (post.getAudioKey() != null) {
             s3Service.deleteAudio(post.getAudioKey());
@@ -166,7 +167,7 @@ public class PostServiceImpl implements PostService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Publicacion no encontrada con id: " + postId));
 
-        interactionClient.deleteInteractionsByPost(postId, jwt.getTokenValue());
+        postEventPublisher.publishPostDeleted(postId);
         if (post.getAudioKey() != null) {
             s3Service.deleteAudio(post.getAudioKey());
         }
