@@ -48,6 +48,13 @@ Microservicio de publicaciones y feed para **heyPudú!**.
 - **Buckets S3:** `heypudu-audio`, `heypudu-covers`
 - **Depende de:** `ms-users`, `ms-interactions`
 
+### Mensajeria RabbitMQ
+
+`ms-posts` publica el comando `post.delete` en `ex.heypudu.cmd` para que
+`ms-interactions` elimine de forma asincrona los likes y comentarios asociados.
+Tambien consume `q.heypudu.audit` y registra en logs los eventos de likes,
+comentarios y follows recibidos desde `ex.heypudu.events`.
+
 ## Estructura del proyecto
 
 ```

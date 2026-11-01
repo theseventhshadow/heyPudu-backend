@@ -1,0 +1,90 @@
+# ============================================================
+# Clúster RabbitMQ de la EP2 — dos nodos
+#
+#   docker compose -f docker-compose.rabbit.yml up -d
+#   docker compose -f docker-compose.rabbit.yml logs -f rabbit-cluster-init
+#
+# Management UI:  http://localhost:15672 (rabbit1)  y  :15673 (rabbit2)
+# AMQP desde microservicios: amqp://heypudu:devpassword@<host>:5672
+# ============================================================
+
+name: heypudu-rabbit
+
+x-rabbit-node: &rabbit-node
+  image: rabbitmq:4-management
+  restart: unless-stopped
+  environment:
+    RABBITMQ_ERLANG_COOKIE: ${RABBIT_COOKIE:-heypudu-ep2-cluster-cookie}
+    RABBITMQ_DEFAULT_USER: ${RABBIT_USER:-heypudu}
+    RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD:-devpassword}
+  healthcheck:
+    test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+    interval: 10s
+    timeout: 10s
+    retries: 12
+    start_period: 40s
+  networks:
+    - rabbit
+
+services:
+
+  # Nodo 1: forma el clúster y expone AMQP y el Management UI.
+  rabbit1:
+    <<: *rabbit-node
+    container_name: heypudu-rabbit1
+    hostname: rabbit1
+    environment:
+      RABBITMQ_ERLANG_COOKIE: ${RABBIT_COOKIE:-heypudu-ep2-cluster-cookie}
+      RABBITMQ_DEFAULT_USER: ${RABBIT_USER:-heypudu}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD:-devpassword}
+      RABBITMQ_NODENAME: rabbit@rabbit1
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbit1_data:/var/lib/rabbitmq
+      - ./rabbit/conf/10-heypudu.conf:/etc/rabbitmq/conf.d/10-heypudu.conf:ro
+
+  # Nodo 2: se une al clúster. Expone sus puertos para poder comprobar
+  # que responde de forma independiente (pregunta P1 de la defensa).
+  rabbit2:
+    <<: *rabbit-node
+    container_name: heypudu-rabbit2
+    hostname: rabbit2
+    environment:
+      RABBITMQ_ERLANG_COOKIE: ${RABBIT_COOKIE:-heypudu-ep2-cluster-cookie}
+      RABBITMQ_DEFAULT_USER: ${RABBIT_USER:-heypudu}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD:-devpassword}
+      RABBITMQ_NODENAME: rabbit@rabbit2
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    volumes:
+      - rabbit2_data:/var/lib/rabbitmq
+      - ./rabbit/conf/10-heypudu.conf:/etc/rabbitmq/conf.d/10-heypudu.conf:ro
+
+  # Contenedor de un solo uso: une rabbit2 al clúster y termina.
+  rabbit-cluster-init:
+    image: rabbitmq:4-management
+    container_name: heypudu-rabbit-cluster-init
+    restart: "no"
+    depends_on:
+      rabbit1:
+        condition: service_healthy
+      rabbit2:
+        condition: service_healthy
+    environment:
+      RABBITMQ_ERLANG_COOKIE: ${RABBIT_COOKIE:-heypudu-ep2-cluster-cookie}
+    entrypoint: ["/bin/sh", "/opt/cluster/cluster-init.sh"]
+    volumes:
+      - ./rabbit/cluster-init.sh:/opt/cluster/cluster-init.sh:ro
+    networks:
+      - rabbit
+
+volumes:
+  rabbit1_data:
+  rabbit2_data:
+
+networks:
+  rabbit:
+    name: heypudu-rabbit-net

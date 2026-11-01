@@ -49,6 +49,9 @@ dependencies {
     implementation platform("software.amazon.awssdk:bom:${awssdkVersion}")
     implementation 'software.amazon.awssdk:s3'
 
+    // Mensajeria asincrona (EP2)
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
+
     // Lombok
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'

@@ -489,7 +489,7 @@ docker run -d --name ms-interactions \
 - **Sincronización asíncrona**: usar SQS/SNS para actualizar contadores, en lugar de REST síncrono.
 - **Retry con Resilience4j**: si `ms-posts` está caído, reintentar con backoff exponencial antes de fallar.
 - **Edición de comentarios**: agregar `updated_at` y endpoint `PUT /api/v1/comments/{id}`.
-- **Notificaciones**: cuando alguien da like o comenta, notificar al autor del post.
+- **Notificaciones**: los likes y comentarios publican eventos RabbitMQ que `ms-users` persiste para el autor del post.
 
 ## Autor
 

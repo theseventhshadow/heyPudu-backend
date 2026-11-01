@@ -43,6 +43,27 @@ spring:
     multipart:
       enabled: false
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:heypudu}
+    password: ${RABBITMQ_PASSWORD:devpassword}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
+        # Un rechazo va a la DLQ, nunca vuelve a la cola indefinidamente.
+        default-requeue-rejected: false
+        retry:
+          enabled: false
+
+rabbit:
+  topology:
+    message-ttl-ms: ${RABBIT_MSG_TTL_MS:3600000}
+    max-length: ${RABBIT_MAX_LENGTH:10000}
+    delivery-limit: ${RABBIT_DELIVERY_LIMIT:3}
+
 clients:
   users:
     base-url: ${CLIENTS_USERS_BASE_URL:http://localhost:8082}

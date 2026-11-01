@@ -36,6 +36,10 @@ services:
       CLIENTS_POSTS_BASE_URL: http://ms-posts:8083
       CLIENTS_INTERACTIONS_BASE_URL: http://ms-interactions:8084
       S3_AVATARS_BUCKET: ${S3_AVATARS_BUCKET}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbit1}
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBIT_USER:-heypudu}
+      RABBITMQ_PASSWORD: ${RABBIT_PASSWORD:-devpassword}
     ports:
       - "8082:8082"
     mem_limit: 400m
@@ -58,6 +62,10 @@ services:
       CLIENTS_INTERACTIONS_BASE_URL: http://ms-interactions:8084
       S3_AUDIO_BUCKET: ${S3_AUDIO_BUCKET}
       S3_COVERS_BUCKET: ${S3_COVERS_BUCKET}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbit1}
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBIT_USER:-heypudu}
+      RABBITMQ_PASSWORD: ${RABBIT_PASSWORD:-devpassword}
     ports:
       - "8083:8083"
     mem_limit: 400m
@@ -76,9 +84,32 @@ services:
       DB_USERNAME: ${DB_USERNAME_INTERACTIONS}
       DB_PASSWORD: ${DB_PASSWORD_INTERACTIONS}
       CLIENTS_POSTS_BASE_URL: http://ms-posts:8083
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbit1}
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBIT_USER:-heypudu}
+      RABBITMQ_PASSWORD: ${RABBIT_PASSWORD:-devpassword}
     ports:
       - "8084:8084"
     mem_limit: 400m
+    networks:
+      - heypudu-internal
+
+  ms-heypudu-rabbit-admin:
+    image: unalmaermitana/heypudu-ms-heypudu-rabbit-admin:latest
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx128m -Xss512k -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbit1}
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBIT_USER:-heypudu}
+      RABBITMQ_PASSWORD: ${RABBIT_PASSWORD:-devpassword}
+      RABBITMQ_VHOST: ${RABBIT_VHOST:-/}
+    ports:
+      - "8085:8085"
+    mem_limit: 300m
     networks:
       - heypudu-internal
 

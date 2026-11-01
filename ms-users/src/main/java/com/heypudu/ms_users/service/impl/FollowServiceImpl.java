@@ -5,6 +5,7 @@ import com.heypudu.ms_users.dto.response.UserSummaryResponse;
 import com.heypudu.ms_users.exception.BusinessException;
 import com.heypudu.ms_users.exception.ResourceNotFoundException;
 import com.heypudu.ms_users.mapper.UserMapper;
+import com.heypudu.ms_users.messaging.UserEventPublisher;
 import com.heypudu.ms_users.model.Follow;
 import com.heypudu.ms_users.model.User;
 import com.heypudu.ms_users.repository.FollowRepository;
@@ -34,17 +35,20 @@ public class FollowServiceImpl implements FollowService {
     private final UserMapper userMapper;
     private final S3Service s3Service;
     private final CognitoUserExtractor cognitoUserExtractor;
+    private final UserEventPublisher userEventPublisher;
 
     public FollowServiceImpl(FollowRepository followRepository,
                              UserRepository userRepository,
                              UserMapper userMapper,
                              S3Service s3Service,
-                             CognitoUserExtractor cognitoUserExtractor) {
+                             CognitoUserExtractor cognitoUserExtractor,
+                             UserEventPublisher userEventPublisher) {
         this.followRepository = followRepository;
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.s3Service = s3Service;
         this.cognitoUserExtractor = cognitoUserExtractor;
+        this.userEventPublisher = userEventPublisher;
     }
 
     @Override
@@ -71,6 +75,7 @@ public class FollowServiceImpl implements FollowService {
 
         userRepository.updateFollowingCount(follower.getId(), DELTA_UP);
         userRepository.updateFollowerCount(followed.getId(), DELTA_UP);
+        userEventPublisher.publishFollow(follower.getCognitoSub(), followed.getCognitoSub());
 
         return userMapper.toFollowResponse(saved);
     }

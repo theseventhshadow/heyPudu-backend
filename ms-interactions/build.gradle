@@ -44,6 +44,9 @@ dependencies {
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
 
+    // Mensajeria asincrona (EP2)
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
+
     // Lombok
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'

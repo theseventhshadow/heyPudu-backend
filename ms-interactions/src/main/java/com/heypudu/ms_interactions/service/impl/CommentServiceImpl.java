@@ -6,6 +6,7 @@ import com.heypudu.ms_interactions.dto.response.CommentResponse;
 import com.heypudu.ms_interactions.exception.BusinessException;
 import com.heypudu.ms_interactions.exception.ResourceNotFoundException;
 import com.heypudu.ms_interactions.mapper.InteractionMapper;
+import com.heypudu.ms_interactions.messaging.InteractionEventPublisher;
 import com.heypudu.ms_interactions.model.Comment;
 import com.heypudu.ms_interactions.repository.CommentRepository;
 import com.heypudu.ms_interactions.security.CognitoUserExtractor;
@@ -30,15 +31,18 @@ public class CommentServiceImpl implements CommentService {
     private final PostClient postClient;
     private final InteractionMapper interactionMapper;
     private final CognitoUserExtractor cognitoUserExtractor;
+    private final InteractionEventPublisher interactionEventPublisher;
 
     public CommentServiceImpl(CommentRepository commentRepository,
                               PostClient postClient,
                               InteractionMapper interactionMapper,
-                              CognitoUserExtractor cognitoUserExtractor) {
+                              CognitoUserExtractor cognitoUserExtractor,
+                              InteractionEventPublisher interactionEventPublisher) {
         this.commentRepository = commentRepository;
         this.postClient = postClient;
         this.interactionMapper = interactionMapper;
         this.cognitoUserExtractor = cognitoUserExtractor;
+        this.interactionEventPublisher = interactionEventPublisher;
     }
 
     @Override
@@ -46,14 +50,17 @@ public class CommentServiceImpl implements CommentService {
     public CommentResponse createComment(UUID postId, CreateCommentRequest request, Jwt jwt) {
         UUID userId = cognitoUserExtractor.extractSub(jwt);
 
-        // Validar que el post existe antes de crear el comentario.
-        postClient.validatePostExists(postId, jwt.getTokenValue());
+        // Validar que el post existe y obtener su autor antes de crear el comentario.
+        UUID recipientId = postClient.validatePostExists(postId, jwt.getTokenValue());
 
         Comment comment = new Comment(postId, userId, request.content(), Instant.now());
         Comment saved = commentRepository.save(comment);
 
         // Notificar a ms-posts para incrementar comment_count.
         postClient.updateCounters(postId, NO_LIKE_DELTA, COMMENT_DELTA_UP, jwt.getTokenValue());
+        if (!recipientId.equals(userId)) {
+            interactionEventPublisher.publishComment(userId, recipientId, postId, saved.getId());
+        }
 
         return interactionMapper.toCommentResponse(saved);
     }

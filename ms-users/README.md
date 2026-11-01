@@ -88,7 +88,8 @@ ms-users/
         ├── application-prod.yml
         └── db/migration/
             ├── V1__init_users_schema.sql
-            └── V2__init_follows_table.sql
+            ├── V2__init_follows_table.sql
+            └── V3__init_notifications_table.sql
 ```
 
 ## Endpoints
@@ -111,6 +112,14 @@ ms-users/
 | `POST` | `/api/v1/users/{id}/follow` | Seguir | `user`, `admin` |
 | `DELETE` | `/api/v1/users/{id}/follow` | Dejar de seguir | `user`, `admin` |
 | `GET` | `/api/v1/users/search?q=` | Buscar usuarios | `user`, `admin` |
+
+### Notificaciones
+
+| Método | Endpoint | Descripción | Rol |
+|---|---|---|---|
+| `GET` | `/api/v1/notifications` | Listar notificaciones (`unreadOnly=true` filtra no leídas) | `user`, `admin` |
+| `PATCH` | `/api/v1/notifications/{id}/read` | Marcar una notificación como leída | `user`, `admin` |
+| `POST` | `/api/v1/notifications/read-all` | Marcar todas como leídas | `user`, `admin` |
 
 ### Almacenamiento
 
@@ -329,7 +338,6 @@ curl http://localhost:8082/actuator/health
 - `post_count` actualizado vía eventos
 - Eliminación diferida 30 días (con cancelación)
 - Búsqueda con `pg_trgm`
-- Notificaciones al recibir un follow
 
 ## Autor
 
