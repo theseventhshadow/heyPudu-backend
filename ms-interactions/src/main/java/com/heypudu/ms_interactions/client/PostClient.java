@@ -25,13 +25,18 @@ public class PostClient {
      * Verifica que un post exista en ms-posts.
      * Lanza BusinessException si no existe o si ms-posts no responde.
      */
-    public void validatePostExists(UUID postId, String jwt) {
+    public UUID validatePostExists(UUID postId, String jwt) {
         try {
-            postsRestClient.get()
+            PostAuthorResponse post = postsRestClient.get()
                     .uri("/api/v1/posts/{id}", postId)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwt)
                     .retrieve()
-                    .toBodilessEntity();
+                    .body(PostAuthorResponse.class);
+            if (post == null || post.authorId() == null) {
+                throw new BusinessException(
+                        "La publicacion no contiene un autor valido: " + postId);
+            }
+            return post.authorId();
         } catch (RestClientException ex) {
             log.warn("No se pudo validar el post {}: {}", postId, ex.getMessage());
             throw new BusinessException(
@@ -66,5 +71,8 @@ public class PostClient {
      * Es privado porque no se expone fuera del cliente.
      */
     private record CounterUpdateRequest(int likeDelta, int commentDelta) {
+    }
+
+    private record PostAuthorResponse(UUID authorId) {
     }
 }

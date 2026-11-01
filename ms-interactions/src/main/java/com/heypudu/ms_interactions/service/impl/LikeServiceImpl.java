@@ -4,6 +4,7 @@ import com.heypudu.ms_interactions.client.PostClient;
 import com.heypudu.ms_interactions.dto.response.LikeCountResponse;
 import com.heypudu.ms_interactions.dto.response.LikeResponse;
 import com.heypudu.ms_interactions.mapper.InteractionMapper;
+import com.heypudu.ms_interactions.messaging.InteractionEventPublisher;
 import com.heypudu.ms_interactions.model.Like;
 import com.heypudu.ms_interactions.repository.LikeRepository;
 import com.heypudu.ms_interactions.security.CognitoUserExtractor;
@@ -28,15 +29,18 @@ public class LikeServiceImpl implements LikeService {
     private final PostClient postClient;
     private final InteractionMapper interactionMapper;
     private final CognitoUserExtractor cognitoUserExtractor;
+    private final InteractionEventPublisher interactionEventPublisher;
 
     public LikeServiceImpl(LikeRepository likeRepository,
                            PostClient postClient,
                            InteractionMapper interactionMapper,
-                           CognitoUserExtractor cognitoUserExtractor) {
+                           CognitoUserExtractor cognitoUserExtractor,
+                           InteractionEventPublisher interactionEventPublisher) {
         this.likeRepository = likeRepository;
         this.postClient = postClient;
         this.interactionMapper = interactionMapper;
         this.cognitoUserExtractor = cognitoUserExtractor;
+        this.interactionEventPublisher = interactionEventPublisher;
     }
 
     @Override
@@ -50,14 +54,17 @@ public class LikeServiceImpl implements LikeService {
             return interactionMapper.toLikeResponse(existing);
         }
 
-        // Validar que el post existe antes de crear el like.
-        postClient.validatePostExists(postId, jwt.getTokenValue());
+        // Validar que el post existe y obtener su autor antes de crear el like.
+        UUID recipientId = postClient.validatePostExists(postId, jwt.getTokenValue());
 
         Like like = new Like(postId, userId, Instant.now());
         Like saved = likeRepository.save(like);
 
         // Notificar a ms-posts para incrementar like_count.
         postClient.updateCounters(postId, LIKE_DELTA_UP, NO_COMMENT_DELTA, jwt.getTokenValue());
+        if (!recipientId.equals(userId)) {
+            interactionEventPublisher.publishLike(userId, recipientId, postId);
+        }
 
         return interactionMapper.toLikeResponse(saved);
     }
