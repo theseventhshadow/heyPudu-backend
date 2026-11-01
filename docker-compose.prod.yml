@@ -94,6 +94,25 @@ services:
     networks:
       - heypudu-internal
 
+  ms-heypudu-rabbit-admin:
+    image: unalmaermitana/heypudu-ms-heypudu-rabbit-admin:latest
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx128m -Xss512k -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbit1}
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBIT_USER:-heypudu}
+      RABBITMQ_PASSWORD: ${RABBIT_PASSWORD:-devpassword}
+      RABBITMQ_VHOST: ${RABBIT_VHOST:-/}
+    ports:
+      - "8085:8085"
+    mem_limit: 300m
+    networks:
+      - heypudu-internal
+
 networks:
   heypudu-internal:
     driver: bridge
