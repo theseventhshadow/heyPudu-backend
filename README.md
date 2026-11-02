@@ -11,19 +11,20 @@ Este README es la **fuente de verdad** del backend. Debe contener todo lo necesa
 1. [Descripción del proyecto](#descripción-del-proyecto)
 2. [Arquitectura general](#arquitectura-general)
 3. [Microservicios](#microservicios)
-4. [Decisiones de diseño](#decisiones-de-diseño)
-5. [Estructura del repositorio](#estructura-del-repositorio)
-6. [Convenciones](#convenciones)
-7. [Modelo de datos](#modelo-de-datos)
-8. [Seguridad y autenticación](#seguridad-y-autenticación)
-9. [Comunicación entre microservicios](#comunicación-entre-microservicios)
-10. [Almacenamiento de archivos](#almacenamiento-de-archivos)
-11. [Configuración y entornos](#configuración-y-entornos)
-12. [Ejecución local](#ejecución-local)
-13. [Despliegue](#despliegue)
-14. [CI/CD](#cicd)
-15. [Estado actual del proyecto](#estado-actual-del-proyecto)
-16. [Trabajo futuro](#trabajo-futuro)
+4. [RabbitMQ](#rabbitmq)
+5. [Decisiones de diseño](#decisiones-de-diseño)
+6. [Estructura del repositorio](#estructura-del-repositorio)
+7. [Convenciones](#convenciones)
+8. [Modelo de datos](#modelo-de-datos)
+9. [Seguridad y autenticación](#seguridad-y-autenticación)
+10. [Comunicación entre microservicios](#comunicación-entre-microservicios)
+11. [Almacenamiento de archivos](#almacenamiento-de-archivos)
+12. [Configuración y entornos](#configuración-y-entornos)
+13. [Ejecución local](#ejecución-local)
+14. [Despliegue](#despliegue)
+15. [CI/CD](#cicd)
+16. [Estado actual del proyecto](#estado-actual-del-proyecto)
+17. [Trabajo futuro](#trabajo-futuro)
 
 ---
 
@@ -55,23 +56,31 @@ Los usuarios se autentican con **AWS Cognito**. Los administradores pueden banea
 │  (valida JWT contra Cognito) │
 └──────────────┬───────────────┘
                │
-   ┌───────────┼───────────┬───────────────┐
-   ▼           ▼           ▼               ▼
-┌────────┐ ┌────────┐ ┌─────────┐ ┌──────────────┐
-│ms-auth │ │ms-users│ │ms-posts │ │ms-interactions│
-│ :8081  │ │ :8082  │ │ :8083   │ │ :8084         │
-└───┬────┘ └───┬────┘ └────┬────┘ └──────┬────────┘
-    │          │           │             │
-    ▼          ▼           ▼             ▼
-┌────────┐ ┌────────┐ ┌─────────┐ ┌──────────────┐
-│auth_db │ │users_db│ │posts_db │ │interactions_db│
-└────────┘ └────────┘ └────┬────┘ └──────────────┘
-                            │
-                            ▼
+   ┌───────────┼───────────┼───────────┬───────────────┐
+   ▼           ▼           ▼           ▼               ▼
+┌────────┐ ┌────────┐ ┌─────────┐ ┌──────────────┐ ┌──────────────┐
+│ms-auth │ │ms-users│ │ms-posts │ │ms-interactions│ │rabbit-admin  │
+│ :8081  │ │ :8082  │ │ :8083   │ │ :8084         │ │ :8085        │
+└────┬───┘ └──┬─────┘ └────┬────┘ └──────┬────────┘ └──────┬───────┘
+     │         │            │             │                 │
+     └─────────┴────────────┴─────────────┴─────────────────┘
+                           │
+                           ▼
+                 ┌────────────────────┐
+                 │ EC2 RabbitMQ        │
+                 │ rabbit1 + rabbit2   │
+                 │ quorum queues + DLQ │
+                 └────────────────────┘
+
+  Cada microservicio utiliza su esquema PostgreSQL en Neon.
+  ms-posts, ms-users y ms-interactions publican o consumen mensajes AMQP.
+  ms-heypudu-rabbit-admin administra la topología mediante RabbitAdmin.
+
                      ┌────────────┐
                      │  AWS S3    │
-                     │ (audio +   │
-                     │  portadas) │
+                     │ audio,     │
+                     │ portadas,  │
+                     │ avatares   │
                      └────────────┘
 ```
 
@@ -85,6 +94,7 @@ Los usuarios se autentican con **AWS Cognito**. Los administradores pueden banea
 - **AWS S3** (almacenamiento de audio y portadas)
 - **AWS API Gateway** (enrutamiento y validación de JWT)
 - **AWS EC2** (despliegue de microservicios vía Docker)
+- **RabbitMQ 4** (clúster de dos nodos, exchanges, colas quorum y DLQ)
 - **GitHub Actions** (CI/CD)
 
 ---
@@ -96,9 +106,56 @@ Los usuarios se autentican con **AWS Cognito**. Los administradores pueden banea
 | `ms-auth` | 8081 | `heypudu_auth` | Sincronización con Cognito, datos del usuario autenticado. |
 | `ms-users` | 8082 | `heypudu_users` | Perfil, seguir/dejar de seguir, búsqueda de usuarios, administración. |
 | `ms-posts` | 8083 | `heypudu_posts` | Publicaciones (texto/audio), feed, búsqueda de posts, URLs prefirmadas S3. |
-| `ms-interactions` | 8084 | `heypudu_interactions` | Likes y comentarios. |
+| `ms-interactions` | 8084 | `heypudu_interactions` | Likes, comentarios, reportes y mensajería de comandos/eventos. |
+| `ms-heypudu-rabbit-admin` | 8085 | — | Administración REST de exchanges, colas y bindings RabbitMQ. |
 
 Cada microservicio es un **proyecto Spring Boot independiente** con su propio `build.gradle`, su propia clase `@SpringBootApplication`, su propio `Dockerfile` y su propia configuración.
+
+---
+
+## RabbitMQ
+
+RabbitMQ se ejecuta en una EC2 separada de la EC2 backend mediante
+[`docker-compose.rabbit.yml`](./docker-compose.rabbit.yml). El clúster tiene
+dos nodos:
+
+- `rabbit@rabbit1`: AMQP `5672`, Management UI `15672`.
+- `rabbit@rabbit2`: AMQP interno, Management UI publicada de forma
+  independiente para comprobaciones.
+
+La EC2 backend se conecta por la IP privada o DNS privado de RabbitMQ. El
+puerto AMQP `5672` se permite únicamente desde el Security Group del backend.
+La Management UI no se expone públicamente; para una demostración se utiliza
+un túnel SSH.
+
+### Topología
+
+| Exchange | Tipo | Cola | Routing key o patrón |
+|---|---|---|---|
+| `ex.heypudu.cmd` | `direct` | `q.heypudu.command` | `post.delete` |
+| `ex.heypudu.events` | `topic` | `q.heypudu.notification` | `interaction.liked`, `interaction.commented`, `user.followed` |
+| `ex.heypudu.events` | `topic` | `q.heypudu.audit` | `interaction.*`, `user.#` |
+| `ex.heypudu.dlx` | `direct` | Tres DLQ | Routing key específica de cada DLQ |
+
+Las tres colas funcionales y sus DLQ son colas quorum durables. Utilizan TTL
+predeterminado de una hora, longitud máxima de `10000`, overflow
+`rejectPublish`, límite de entregas `3` y dead-letter exchange
+`ex.heypudu.dlx`.
+
+### Flujos
+
+- `ms-posts` publica `post.delete`; `ms-interactions` elimina likes y
+  comentarios y confirma con ACK.
+- `ms-interactions` publica eventos de likes y comentarios.
+- `ms-users` publica eventos de seguimiento y consume notificaciones.
+- `ms-posts` consume eventos de auditoría.
+- Los consumidores usan ACK manual y NACK sin requeue ante errores no
+  recuperables.
+- `DeadLetterListener` registra mensajes de las tres DLQ.
+
+La topología está centralizada en clases `RabbitTopology` y
+`RabbitTopologyConfig`. La configuración de escucha y el conversor de mensajes
+se mantienen separados de la lógica de negocio.
 
 ---
 
@@ -113,9 +170,9 @@ Estas decisiones son **vinculantes** para el proyecto. Cualquier IA o desarrolla
 | Microservicios separados | Requisito de la EP1. Cada servicio puede escalar y desplegarse de forma independiente. |
 | Monorepo (todos los `ms-*` en un mismo repo) | Simplifica la gestión para un equipo pequeño. Cada carpeta es un proyecto Spring Boot autónomo. |
 | Sin pom padre de Maven | Se usa Gradle. Cada microservicio tiene su propio build. |
-| Base de datos por microservicio | Principio de database-per-service. Un solo RDS con esquemas separados. |
+| Base de datos por microservicio | Principio de database-per-service. PostgreSQL administrado en Neon con esquemas separados. |
 | Sin BFF en la EP1 | El API Gateway cumple parcialmente ese rol. Se documenta como trabajo futuro. |
-| Sin SQS/SNS en la EP1 | Se usa REST puntual o duplicación mínima de datos. Se documenta como trabajo futuro. |
+| RabbitMQ para mensajería asíncrona | Los comandos y eventos internos se desacoplan mediante exchanges, colas quorum, ACK/NACK y DLQ. |
 
 ### Modelo de datos
 
@@ -192,7 +249,12 @@ heypudu-backend/
 │           └── db/migration/
 │               └── V1__init_auth_schema.sql
 │
-├── ms-users/                          # 🚧 Pendiente
+├── docker-compose.prod.yml             # Producción: cinco microservicios
+├── docker-compose.rabbit.yml           # Clúster RabbitMQ de dos nodos
+├── rabbit/
+│   ├── cluster-init.sh                 # Unión idempotente de rabbit2 al clúster
+│   └── conf/10-heypudu.conf            # Colas quorum por defecto
+├── ms-users/                          # ✅ Completado
 │   ├── build.gradle
 │   ├── settings.gradle
 │   ├── Dockerfile
@@ -244,9 +306,10 @@ heypudu-backend/
 │           ├── application-prod.yml
 │           └── db/migration/
 │               ├── V1__init_users_schema.sql
-│               └── V2__init_follows_table.sql
+│               ├── V2__init_follows_table.sql
+│               └── V3__init_notifications_table.sql
 │
-├── ms-posts/                          # 🚧 Pendiente
+├── ms-posts/                          # ✅ Completado
 │   ├── build.gradle
 │   ├── settings.gradle
 │   ├── Dockerfile
@@ -301,9 +364,13 @@ heypudu-backend/
 │           ├── application-dev.yml
 │           ├── application-prod.yml
 │           └── db/migration/
-│               └── V1__init_posts_schema.sql
+│               ├── V1__init_posts_schema.sql
+│               ├── V2__allow_audio_description.sql
+│               ├── V3__init_post_reports.sql
+│               ├── V4__allow_repeat_reports.sql
+│               └── V5__add_author_name.sql
 │
-└── ms-interactions/                   # 🚧 Pendiente
+├── ms-interactions/                   # ✅ Completado
     ├── build.gradle
     ├── settings.gradle
     ├── Dockerfile
@@ -356,10 +423,26 @@ heypudu-backend/
             ├── application-prod.yml
             └── db/migration/
                 ├── V1__init_likes_table.sql
-                └── V2__init_comments_table.sql
+                ├── V2__init_comments_table.sql
+                ├── V3__init_comment_reports.sql
+                └── V4__allow_repeat_reports.sql
 ```
 
-> **Nota:** las estructuras de `ms-users`, `ms-posts` y `ms-interactions` son **propuestas**. Al construir cada uno, se debe verificar que la estructura respete el patrón usado en `ms-auth`.
+```
+└── ms-heypudu-rabbit-admin/             # ✅ Completado
+    ├── build.gradle
+    ├── Dockerfile
+    ├── README.md
+    └── src/main/java/com/heypudu/ms_rabbit_admin/
+        ├── controller/RabbitAdminController.java
+        ├── service/impl/RabbitAdminServiceImpl.java
+        ├── config/
+        └── dto/
+```
+
+Las estructuras anteriores corresponden al código actual, no a propuestas.
+Cada microservicio mantiene su propio build, configuración, migraciones,
+pruebas y Dockerfile.
 
 ---
 
@@ -628,6 +711,32 @@ public class UserClient {
 
 Los endpoints internos se prefijan con `/api/v1/internal/` y **no** se exponen en el API Gateway público. Solo son accesibles desde la VPC.
 
+### Mensajería asíncrona con RabbitMQ
+
+RabbitMQ se utiliza para comandos y eventos que no requieren una respuesta
+HTTP del consumidor:
+
+1. El productor publica en un exchange.
+2. RabbitMQ enruta según la routing key y los bindings.
+3. El consumidor procesa el mensaje.
+4. El consumidor envía ACK cuando termina correctamente.
+5. Ante un error no recuperable, envía NACK sin requeue y el mensaje llega a
+   la DLQ correspondiente.
+
+Los flujos actuales son:
+
+- `ms-posts` publica `post.delete` en `ex.heypudu.cmd`; `ms-interactions`
+  consume `q.heypudu.command` y elimina likes y comentarios.
+- `ms-interactions` publica `interaction.liked` y
+  `interaction.commented` en `ex.heypudu.events`.
+- `ms-users` publica `user.followed` y consume
+  `q.heypudu.notification`.
+- `ms-posts` consume `q.heypudu.audit` para registrar eventos.
+
+Las colas, exchanges, bindings y DLQ se declaran de forma idempotente mediante
+configuración Spring AMQP. Los nombres se centralizan en `RabbitTopology`.
+RabbitMQ no reemplaza las llamadas REST que necesitan datos síncronos.
+
 ---
 
 ## Almacenamiento de archivos
@@ -690,6 +799,11 @@ Los endpoints internos se prefijan con `/api/v1/internal/` y **no** se exponen e
 | `COGNITO_ISSUER_URI` | Issuer del User Pool de Cognito. |
 | `COGNITO_JWK_SET_URI` | Endpoint JWKS del User Pool. |
 | `APP_CORS_ALLOWED_ORIGINS` | Orígenes separados por coma. En producción: `https://heypudu.vercel.app`. |
+| `RABBITMQ_HOST` | Host privado de RabbitMQ, normalmente `rabbit1` en Compose. |
+| `RABBITMQ_PORT` | Puerto AMQP, normalmente `5672`. |
+| `RABBIT_USER` | Usuario RabbitMQ. |
+| `RABBIT_PASSWORD` | Contraseña RabbitMQ, solo en `.env`. |
+| `RABBIT_VHOST` | Virtual host RabbitMQ, normalmente `/` para el administrador. |
 
 ### Variables específicas por microservicio
 
@@ -701,6 +815,7 @@ Los endpoints internos se prefijan con `/api/v1/internal/` y **no** se exponen e
 | `ms-users` | `CLIENTS_AUTH_BASE_URL` | URL base de `ms-auth`. |
 | `ms-posts` | `CLIENTS_USERS_BASE_URL` | URL base de `ms-users`. |
 | `ms-interactions` | `CLIENTS_POSTS_BASE_URL` | URL base de `ms-posts`. |
+| `ms-users`, `ms-posts`, `ms-interactions`, `ms-heypudu-rabbit-admin` | `RABBITMQ_*` | Parámetros de conexión AMQP y autenticación RabbitMQ. |
 
 ### Frontend en Vercel
 
@@ -717,7 +832,7 @@ Para desarrollo local puedes permitir ambos orígenes:
 APP_CORS_ALLOWED_ORIGINS=http://localhost:5173,https://heypudu.vercel.app
 ```
 
-Los cuatro microservicios aplican esta lista a las peticiones CORS, incluyendo
+Los cuatro microservicios de dominio aplican esta lista a las peticiones CORS, incluyendo
 las peticiones `OPTIONS` de preflight. No se debe usar `*` en producción.
 
 El frontend debe usar como URL base la URL pública de API Gateway, no la IP ni
@@ -760,6 +875,21 @@ pruebas locales.
 - JDK 25
 - Docker (para PostgreSQL local)
 - Gradle Wrapper (incluido en cada microservicio)
+
+### Levantar RabbitMQ
+
+Para ejecutar localmente el clúster de dos nodos:
+
+```bash
+docker compose -f docker-compose.rabbit.yml up -d
+docker compose -f docker-compose.rabbit.yml ps
+docker compose -f docker-compose.rabbit.yml logs rabbit-cluster-init
+docker exec heypudu-rabbit1 rabbitmqctl cluster_status
+```
+
+La Management UI queda disponible en `http://localhost:15672` para `rabbit1`
+y en `http://localhost:15673` para `rabbit2`. Las credenciales se configuran
+mediante `.env`; nunca deben incluirse en este README.
 
 ### Levantar PostgreSQL
 
@@ -811,6 +941,7 @@ curl http://localhost:8081/actuator/health
 curl http://localhost:8082/actuator/health
 curl http://localhost:8083/actuator/health
 curl http://localhost:8084/actuator/health
+curl http://localhost:8085/actuator/health
 ```
 
 ---
@@ -819,10 +950,15 @@ curl http://localhost:8084/actuator/health
 
 ### EC2 con Docker Compose y PostgreSQL externo
 
-El archivo `docker-compose.prod.yml` descarga las cuatro imágenes desde Docker Hub,
-ejecuta los microservicios con el perfil `prod`, los conecta a PostgreSQL externo
-(Neon) y los comunica entre sí mediante una red Docker privada. Publica los puertos
-`8081-8084` para el Load Balancer, con límites de memoria por contenedor.
+El archivo `docker-compose.prod.yml` descarga las cinco imágenes desde Docker
+Hub, ejecuta los microservicios con el perfil `prod`, los conecta a PostgreSQL
+externo (Neon) y los comunica entre sí mediante una red Docker privada.
+Publica los puertos `8081-8085` para el Load Balancer, con límites de memoria
+por contenedor.
+
+RabbitMQ se despliega por separado en su propia EC2 con
+`docker-compose.rabbit.yml`. La EC2 backend no comparte la red Docker de
+RabbitMQ: se conecta mediante `RABBITMQ_HOST` y el puerto AMQP privado.
 
 Cadena pública: Vercel → API Gateway HTTP API (`ANY /{proxy+}`) → ALB → EC2.
 La configuración completa está en `../DESPLIEGUE-AWS.md`.
@@ -832,7 +968,8 @@ Preparación en EC2:
 1. Iniciar sesión en Docker Hub con `docker login`.
 2. Crear swap de 2 GB **antes** de arrancar los contenedores.
 3. Copiar `.env.production.example` como `.env` y completarlo con la cadena de
-   conexión de Neon, credenciales por esquema, Cognito y buckets S3.
+   conexión de Neon, credenciales por esquema, Cognito, buckets S3 y
+   parámetros RabbitMQ.
 4. Ejecutar:
 
 ```bash
@@ -862,6 +999,7 @@ Cada microservicio tiene su propio `Dockerfile` (multi-stage build).
 - Enruta `/api/v1/users/**` → `ms-users`
 - Enruta `/api/v1/posts/**` → `ms-posts`
 - Enruta `/api/v1/interactions/**` → `ms-interactions`
+- Enruta `/api/v1/admin/rabbit/**` → `ms-heypudu-rabbit-admin`
 - Valida el JWT contra Cognito antes de reenviar la petición.
 - Los endpoints `/api/v1/internal/**` **no** se exponen públicamente.
 
@@ -869,7 +1007,10 @@ Cada microservicio tiene su propio `Dockerfile` (multi-stage build).
 
 ## CI/CD
 
-Cada microservicio tiene su propio workflow de GitHub Actions en `.github/workflows/deploy-ms-<nombre>.yml`.
+Los servicios de dominio tienen workflows de GitHub Actions en
+`.github/workflows/deploy-ms-<nombre>.yml`. El administrador RabbitMQ se
+publica como imagen Docker y se incorpora en
+`docker-compose.prod.yml`.
 
 ### Flujo
 
@@ -886,7 +1027,7 @@ Cada microservicio tiene su propio workflow de GitHub Actions en `.github/workfl
 | Secret | Descripción |
 |---|---|
 | `EC2_HOST` | IP pública o DNS del EC2. |
-| `EC2_USERNAME` | Usuario SSH (`ubuntu`). |
+| `EC2_USERNAME` | Usuario SSH de la EC2 (`ec2-user` en Amazon Linux). |
 | `EC2_SSH_KEY` | Clave privada SSH. |
 | `DOCKERHUB_USERNAME` | Usuario de Docker Hub. |
 | `DOCKERHUB_TOKEN` | Token de Docker Hub. |
@@ -897,30 +1038,42 @@ Cada microservicio tiene su propio workflow de GitHub Actions en `.github/workfl
 
 ### ✅ Completado
 
-- **ms-auth**: estructura completa, endpoints, seguridad, BD, configuración, README.
+- Los cinco microservicios Spring Boot están implementados:
+  `ms-auth`, `ms-users`, `ms-posts`, `ms-interactions` y
+  `ms-heypudu-rabbit-admin`.
+- La autenticación JWT con AWS Cognito y la autorización por grupos están
+  integradas.
+- La persistencia productiva utiliza Neon PostgreSQL con un esquema por
+  microservicio.
+- Los archivos de audio, portadas y avatares utilizan AWS S3 con URLs
+  prefirmadas.
+- RabbitMQ está desplegado como clúster de dos nodos en una EC2 separada.
+- Existen tres colas funcionales, tres DLQ, exchanges `direct` y `topic`,
+  ACK/NACK manual, TTL, límites y listeners de DLQ.
+- El administrador REST crea y elimina exchanges, colas y bindings y está
+  protegido con `ROLE_ADMIN`.
+- Las imágenes Docker de producción están publicadas en Docker Hub y el
+  Compose productivo ejecuta los cinco servicios.
+- La infraestructura productiva incluye API Gateway, ALB, EC2, Neon, S3,
+  Cognito y Vercel.
 
-### 🚧 Pendiente
+### 📋 Pendientes y mejoras
 
-- **ms-users**: perfil, seguir, búsqueda, administración.
-- **ms-posts**: publicaciones, feed, S3, búsqueda.
-- **ms-interactions**: likes, comentarios.
-
-### 📋 Próximos pasos sugeridos
-
-1. Construir **ms-users** siguiendo el patrón de `ms-auth`.
-2. Construir **ms-posts** (incluye integración con S3).
-3. Construir **ms-interactions**.
-4. Configurar API Gateway y Cognito en AWS.
-5. Configurar RDS con los esquemas.
-6. Configurar EC2 y los pipelines de GitHub Actions.
-7. Integrar con el frontend React.
+- Validar estrictamente las claves S3 y su pertenencia al usuario o
+  publicación.
+- Eliminar explícitamente el avatar de S3 al eliminar una cuenta.
+- Completar y ampliar las pruebas automatizadas de los microservicios.
+- Migrar los endpoints internos a autenticación de servicio.
+- Evaluar un BFF separado si se requiere por arquitectura futura.
+- Mejorar observabilidad con métricas y trazas centralizadas.
 
 ---
 
 ## Trabajo futuro
 
 - **BFF**: agregar una capa que orqueste llamadas para el frontend.
-- **SQS/SNS**: sincronización asíncrona entre microservicios.
+- **RabbitMQ**: ampliar eventos de dominio y estrategias de reprocesamiento
+  según nuevas necesidades del producto.
 - **Secrets Manager**: mover credenciales de variables de entorno a AWS Secrets Manager.
 - **Tests**: unitarios, integración con Testcontainers, end-to-end.
 - **Observabilidad**: CloudWatch, X-Ray, Prometheus.

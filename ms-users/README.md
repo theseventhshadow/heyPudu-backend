@@ -1,18 +1,19 @@
 # ms-users
 
-Microservicio de perfiles y relaciones sociales para **heyPudú!**.
+Microservicio de perfiles, relaciones sociales y notificaciones para
+**heyPudú!**.
 
-## Descripción
+## Responsabilidad
 
-`ms-users` gestiona los perfiles de usuario y las relaciones de seguimiento:
+`ms-users` gestiona:
 
-- Crear el perfil base tras el sync con `ms-auth`.
-- Ver y editar el perfil propio.
-- Ver el perfil público de otros.
-- Seguir y dejar de seguir.
-- Buscar usuarios.
-- Administrar usuarios (banear, desbanear, verificar, desverificar).
-- Generar URLs prefirmadas para subir el avatar a S3.
+- Creación y edición de perfiles.
+- Perfiles públicos, búsqueda y relaciones de seguimiento.
+- Contadores de seguidores, seguidos y publicaciones.
+- Baneo, desbaneo, verificación y desverificación administrativa.
+- URLs prefirmadas de S3 para avatares.
+- Persistencia y consulta de notificaciones recibidas por RabbitMQ.
+- Publicación del evento `user.followed`.
 
 ## Tecnologías
 
@@ -25,13 +26,14 @@ Microservicio de perfiles y relaciones sociales para **heyPudú!**.
 | Autenticación | AWS Cognito (JWT) |
 | Persistencia | Spring Data JPA + PostgreSQL |
 | Migraciones | Flyway |
-| Cliente HTTP | RestClient (Spring 6.1+) |
-| Almacenamiento | AWS S3 (presigned URLs) |
+| Comunicación HTTP | RestClient hacia `ms-auth` y clientes internos |
+| Mensajería | RabbitMQ mediante Spring AMQP |
+| Almacenamiento | AWS S3 con URLs prefirmadas |
 | Monitoreo | Spring Boot Actuator |
 
 ## Arquitectura
 
-```
+```text
 [React + AWS Amplify]
         |
         | JWT
@@ -39,20 +41,69 @@ Microservicio de perfiles y relaciones sociales para **heyPudú!**.
 [AWS API Gateway]
         |
         v
-[ms-users :8082]  --->  [ms-auth :8081]        (disable/enable/delete en Cognito)
+[ms-users :8082] ---> [ms-auth :8081]
         |
-        v
-[heypudu_users] + [S3: heypudu-avatars]
+        +--> [Neon PostgreSQL: heypudu_users]
+        +--> [S3: heypudu-avatars]
+        `--> [RabbitMQ: eventos y notificaciones]
 ```
 
 - **Puerto:** `8082`
 - **Esquema de BD:** `heypudu_users`
 - **Bucket S3:** `heypudu-avatars`
-- **Depende de:** `ms-auth`
+- **Dependencia HTTP:** `ms-auth` para operaciones administrativas de Cognito.
+- **Dependencia de mensajería:** RabbitMQ para notificaciones y eventos de
+  seguimiento.
+
+## Mensajería RabbitMQ
+
+### Consumir notificaciones
+
+`NotificationListener` consume `q.heypudu.notification`, enlazada a
+`ex.heypudu.events` para recibir:
+
+- `interaction.liked`
+- `interaction.commented`
+- `user.followed`
+
+Para cada evento, `NotificationService`:
+
+1. Valida el payload.
+2. Traduce la routing key a un tipo de notificación.
+3. Persiste la notificación en la tabla `notifications`.
+4. Envía ACK manual.
+
+Si ocurre un error, envía NACK sin reencolado y el mensaje queda en
+`q.heypudu.notification.dlq`. `DeadLetterListener` registra el payload y los
+metadatos de muerte.
+
+### Publicar eventos de seguimiento
+
+Cuando un usuario sigue a otro, `UserEventPublisher` publica
+`user.followed` en `ex.heypudu.events`. El evento contiene:
+
+- `eventId`.
+- Fecha de creación.
+- `actorId`: quien comenzó a seguir.
+- `recipientId`: usuario seguido.
+- `postId` y `commentId` nulos para este tipo de evento.
+
+Los eventos de like y comentario son publicados por `ms-interactions`; este
+servicio los consume para crear las notificaciones del destinatario.
+
+| Elemento | Valor |
+|---|---|
+| Exchange de eventos | `ex.heypudu.events` |
+| Exchange de errores | `ex.heypudu.dlx` |
+| Cola de notificaciones | `q.heypudu.notification` |
+| DLQ de notificaciones | `q.heypudu.notification.dlq` |
+| Eventos consumidos | `interaction.liked`, `interaction.commented`, `user.followed` |
+| Evento publicado | `user.followed` |
+| ACK/NACK | ACK manual; rechazo sin reencolado |
 
 ## Estructura del proyecto
 
-```
+```text
 ms-users/
 ├── build.gradle
 ├── settings.gradle
@@ -64,18 +115,22 @@ ms-users/
     │   │   ├── SecurityConfig.java
     │   │   ├── JwtConfig.java
     │   │   ├── RestClientConfig.java
-    │   │   └── S3Config.java
+    │   │   ├── S3Config.java
+    │   │   └── amqp/
     │   ├── controller/
     │   │   ├── UserController.java
     │   │   ├── FollowController.java
+    │   │   ├── NotificationController.java
     │   │   ├── AdminUserController.java
     │   │   └── InternalUserController.java
     │   ├── client/
     │   │   ├── AuthClient.java
     │   │   └── PostClient.java
+    │   ├── messaging/
+    │   │   ├── NotificationListener.java
+    │   │   ├── UserEventPublisher.java
+    │   │   └── DeadLetterListener.java
     │   ├── dto/
-    │   │   ├── request/
-    │   │   └── response/
     │   ├── exception/
     │   ├── mapper/
     │   ├── model/
@@ -87,64 +142,65 @@ ms-users/
         ├── application-dev.yml
         ├── application-prod.yml
         └── db/migration/
-            ├── V1__init_users_schema.sql
+            ├── V1__init_users-schema.sql
             ├── V2__init_follows_table.sql
             └── V3__init_notifications_table.sql
 ```
 
 ## Endpoints
 
-### Perfil propio
+### Perfil y relaciones
 
-| Método | Endpoint | Descripción | Rol |
-|---|---|---|---|
-| `GET` | `/api/v1/users/me` | Ver perfil propio | `user`, `admin` |
-| `PUT` | `/api/v1/users/me` | Editar perfil propio | `user`, `admin` |
-| `DELETE` | `/api/v1/users/me` | Eliminar cuenta (anonimiza) | `user`, `admin` |
-
-### Perfil ajeno y relaciones
-
-| Método | Endpoint | Descripción | Rol |
-|---|---|---|---|
-| `GET` | `/api/v1/users/{id}` | Ver perfil público | `user`, `admin` |
-| `GET` | `/api/v1/users/{id}/followers` | Listar seguidores | `user`, `admin` |
-| `GET` | `/api/v1/users/{id}/following` | Listar seguidos | `user`, `admin` |
-| `POST` | `/api/v1/users/{id}/follow` | Seguir | `user`, `admin` |
-| `DELETE` | `/api/v1/users/{id}/follow` | Dejar de seguir | `user`, `admin` |
-| `GET` | `/api/v1/users/search?q=` | Buscar usuarios | `user`, `admin` |
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `GET` | `/api/v1/users/me` | Ver perfil propio |
+| `PUT` | `/api/v1/users/me` | Editar perfil propio |
+| `DELETE` | `/api/v1/users/me` | Anonimizar y eliminar cuenta |
+| `GET` | `/api/v1/users/{id}` | Ver perfil público |
+| `GET` | `/api/v1/users/{id}/followers` | Listar seguidores |
+| `GET` | `/api/v1/users/{id}/following` | Listar seguidos |
+| `POST` | `/api/v1/users/{id}/follow` | Seguir |
+| `DELETE` | `/api/v1/users/{id}/follow` | Dejar de seguir |
+| `GET` | `/api/v1/users/search?q=` | Buscar usuarios |
 
 ### Notificaciones
 
-| Método | Endpoint | Descripción | Rol |
-|---|---|---|---|
-| `GET` | `/api/v1/notifications` | Listar notificaciones (`unreadOnly=true` filtra no leídas) | `user`, `admin` |
-| `PATCH` | `/api/v1/notifications/{id}/read` | Marcar una notificación como leída | `user`, `admin` |
-| `POST` | `/api/v1/notifications/read-all` | Marcar todas como leídas | `user`, `admin` |
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `GET` | `/api/v1/notifications` | Listar notificaciones paginadas |
+| `GET` | `/api/v1/notifications?unreadOnly=true` | Listar solo no leídas |
+| `PATCH` | `/api/v1/notifications/{id}/read` | Marcar una notificación como leída |
+| `POST` | `/api/v1/notifications/read-all` | Marcar todas como leídas |
 
 ### Almacenamiento
 
 | Método | Endpoint | Descripción |
 |---|---|---|
 | `POST` | `/api/v1/users/me/avatar/presigned-url` | URL prefirmada para avatar |
+| `GET` | `/api/v1/users/by-cognito/{cognitoSub}/avatar` | URL de avatar por Cognito |
 
 ### Administración
 
-| Método | Endpoint | Descripción | Rol |
-|---|---|---|---|
-| `GET` | `/api/v1/admin/users` | Listar todos | `admin` |
-| `PUT` | `/api/v1/admin/users/{id}/ban` | Banear | `admin` |
-| `PUT` | `/api/v1/admin/users/{id}/unban` | Desbanear | `admin` |
-| `PUT` | `/api/v1/admin/users/{id}/verify` | Verificar | `admin` |
-| `PUT` | `/api/v1/admin/users/{id}/unverify` | Desverificar | `admin` |
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `GET` | `/api/v1/admin/users` | Listar usuarios |
+| `GET` | `/api/v1/admin/users/ban-candidates` | Listar candidatos a baneo |
+| `PUT` | `/api/v1/admin/users/{id}/ban` | Banear usuario |
+| `PUT` | `/api/v1/admin/users/{id}/unban` | Desbanear usuario |
+| `PUT` | `/api/v1/admin/users/{id}/verify` | Verificar usuario |
+| `PUT` | `/api/v1/admin/users/{id}/unverify` | Desverificar usuario |
 
-### Endpoints internos
+Las operaciones administrativas requieren `ROLE_ADMIN`.
+
+### Internos
 
 | Método | Endpoint | Descripción |
 |---|---|---|
 | `POST` | `/api/v1/internal/users` | Crear perfil base |
-| `GET` | `/api/v1/internal/users/{id}/summary` | Resumen de un usuario |
-| `GET` | `/api/v1/internal/users/{id}/following/ids` | IDs de seguidos |
+| `GET` | `/api/v1/internal/users/{id}/summary` | Obtener resumen |
+| `GET` | `/api/v1/internal/users/{id}/following/ids` | Obtener IDs seguidos |
 | `GET` | `/api/v1/internal/users/{id}/exists` | Verificar existencia |
+| `PUT` | `/api/v1/internal/users/by-cognito/{cognitoSub}/post-count` | Ajustar contador de posts |
 
 ### Salud
 
@@ -159,7 +215,7 @@ ms-users/
 
 | Columna | Tipo | Restricciones |
 |---|---|---|
-| `id` | `UUID` | PK |
+| `id` | `UUID` | `PRIMARY KEY` |
 | `cognito_sub` | `UUID` | `NOT NULL UNIQUE` |
 | `name` | `VARCHAR(100)` | `NOT NULL` |
 | `username` | `VARCHAR(50)` | `NOT NULL UNIQUE` |
@@ -179,133 +235,159 @@ ms-users/
 
 | Columna | Tipo | Restricciones |
 |---|---|---|
-| `id` | `UUID` | PK |
+| `id` | `UUID` | `PRIMARY KEY` |
 | `follower_id` | `UUID` | `NOT NULL` |
 | `followed_id` | `UUID` | `NOT NULL` |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL` |
 
-Restricciones: `UNIQUE (follower_id, followed_id)`, `CHECK (follower_id <> followed_id)`.
+Restricciones: `UNIQUE (follower_id, followed_id)` y
+`CHECK (follower_id <> followed_id)`.
+
+### Tabla `notifications`
+
+La migración `V3__init_notifications_table.sql` crea la tabla para eventos de
+likes, comentarios y follows.
+
+| Campo | Descripción |
+|---|---|
+| `id` | Identificador interno |
+| `event_id` | Identificador único del evento RabbitMQ |
+| `recipient_id` | Usuario que recibe la notificación |
+| `actor_id` | Usuario que originó la acción |
+| `type` | Tipo derivado de la routing key |
+| `post_id` | Publicación relacionada, si corresponde |
+| `comment_id` | Comentario relacionado, si corresponde |
+| `message` | Texto mostrado al usuario |
+| `is_read` | Estado de lectura |
+| `created_at` | Fecha del evento |
 
 ## Reglas de negocio
 
 | Regla | Detalle |
 |---|---|
 | `username` único | Validación en creación y edición |
-| Cambio de `username` | Una vez cada 30 días (`username_updated_at`) |
-| Un usuario no puede seguirse a sí mismo | `BusinessException` + CHECK en BD |
-| Seguir/dejar de seguir idempotente | Sin error si ya existe/no existe |
-| Banear | `status = BANNED` + deshabilitar en Cognito |
-| Desbanear | `status = ACTIVE` + habilitar en Cognito |
-| Banear no elimina nada | Los datos se mantienen para poder desbanear |
-| Eliminar cuenta | Anonimización real + eliminar de Cognito |
-| Búsqueda | Por `name` o `username`, case-insensitive |
-| Perfil público | No expone `cognitoSub` ni `status` |
+| Cambio de `username` | Una vez cada 30 días |
+| No auto-seguimiento | Validación de servicio y restricción en BD |
+| Follow idempotente | Repetir el seguimiento no duplica la relación |
+| Unfollow idempotente | Quitar una relación inexistente no falla |
+| Banear | `status = BANNED` y deshabilitar en Cognito |
+| Desbanear | `status = ACTIVE` y habilitar en Cognito |
+| Eliminar cuenta | Anonimización local y eliminación en Cognito |
+| Notificaciones | Solo se consultan por el usuario destinatario |
 
 ## Flujos principales
 
 ### Creación de perfil tras el registro
 
-```
+```text
 [Cognito crea la cuenta]
         |
         v
 [React llama a POST /api/v1/auth/sync]
         |
         v
-[ms-auth crea el registro en auth_users]
+[ms-auth crea el registro y llama a ms-users]
         |
         v
-[ms-auth llama a POST /api/v1/internal/users en ms-users]
+[ms-users crea el perfil base]
         |
         v
-[ms-users crea el perfil con name="Usuario" y username="user_<sub8>"]
+[El usuario completa name y username]
+```
+
+### Seguir a otro usuario
+
+```text
+[POST /api/v1/users/{id}/follow]
         |
         v
-[React redirige a "completar perfil"]
+[Guardar follow y actualizar contadores]
         |
         v
-[Usuario llama a PUT /api/v1/users/me con datos reales]
+[Publicar user.followed en RabbitMQ]
+        |
+        v
+[ms-users consume el evento en q.heypudu.notification]
+        |
+        v
+[Persistir la notificación del usuario seguido]
+```
+
+### Recibir una notificación de interacción
+
+```text
+[ms-interactions publica interaction.liked o interaction.commented]
+        |
+        v
+[q.heypudu.notification]
+        |
+        v
+[NotificationListener valida y persiste]
+        |
+        v
+[GET /api/v1/notifications]
 ```
 
 ### Baneo
 
-```
-[Admin llama a PUT /api/v1/admin/users/{id}/ban]
+```text
+[Admin solicita PUT /api/v1/admin/users/{id}/ban]
         |
         v
 [ms-users cambia status a BANNED]
         |
         v
-[ms-users llama a ms-auth: PUT /api/v1/internal/users/{sub}/disable]
+[ms-users llama a ms-auth]
         |
         v
 [ms-auth deshabilita al usuario en Cognito]
 ```
 
-### Eliminación de cuenta
-
-```
-[Usuario llama a DELETE /api/v1/users/me]
-        |
-        v
-[ms-users anonimiza: name, username, bio, avatar_key]
-        |
-        v
-[ms-users cambia status a DELETED]
-        |
-        v
-[ms-users llama a ms-auth: DELETE /api/v1/internal/users/{sub}]
-        |
-        v
-[ms-auth elimina al usuario de Cognito]
-```
-
 ## Configuración
-
-### Variables de entorno en producción
 
 | Variable | Descripción |
 |---|---|
-| `SPRING_PROFILES_ACTIVE` | `prod` |
+| `SPRING_PROFILES_ACTIVE` | Perfil activo, normalmente `prod` |
 | `DB_URL` | JDBC con `currentSchema=heypudu_users` |
-| `DB_USERNAME` | Usuario BD |
-| `DB_PASSWORD` | Contraseña BD |
-| `COGNITO_ISSUER_URI` | Issuer Cognito |
-| `COGNITO_JWK_SET_URI` | JWKS Cognito |
-| `CLIENTS_AUTH_BASE_URL` | URL de `ms-auth` |
-| `CLIENTS_POSTS_BASE_URL` | URL de `ms-posts` |
-| `AWS_REGION` | Región de S3 |
+| `DB_USERNAME` | Usuario de PostgreSQL |
+| `DB_PASSWORD` | Contraseña de PostgreSQL |
+| `COGNITO_ISSUER_URI` | Issuer del User Pool de Cognito |
+| `COGNITO_JWK_SET_URI` | URL JWKS de Cognito |
+| `CLIENTS_AUTH_BASE_URL` | URL base de `ms-auth` |
+| `CLIENTS_POSTS_ENABLED` | Habilita el cliente opcional de posts |
+| `CLIENTS_POSTS_BASE_URL` | URL base de `ms-posts` |
+| `CLIENTS_INTERACTIONS_BASE_URL` | URL base de `ms-interactions` |
+| `RABBITMQ_HOST` | Host de RabbitMQ |
+| `RABBITMQ_PORT` | Puerto AMQP, normalmente `5672` |
+| `RABBITMQ_USERNAME` | Usuario AMQP |
+| `RABBITMQ_PASSWORD` | Contraseña AMQP |
+| `RABBITMQ_PREFETCH` | Prefetch del consumidor |
+| `RABBITMQ_MESSAGE_TTL_MS` | TTL de mensajes |
+| `RABBITMQ_MAX_LENGTH` | Máximo de mensajes por cola |
+| `RABBITMQ_DELIVERY_LIMIT` | Límite de entregas |
+| `AWS_REGION` | Región de AWS |
 | `S3_AVATARS_BUCKET` | Bucket de avatares |
+
+No se deben versionar contraseñas, tokens ni archivos `.env` reales.
 
 ## Ejecución local
 
 ### Requisitos
 
-- JDK 25
-- PostgreSQL (Docker)
-- Credenciales AWS configuradas
-- `ms-auth` corriendo en `:8081`
+- JDK 25.
+- Docker y Docker Compose.
+- PostgreSQL local o la base definida en `DB_URL`.
+- RabbitMQ local o accesible mediante las variables `RABBITMQ_*`.
+- Credenciales AWS para generar URLs de S3.
+- `ms-auth` ejecutándose en `:8081` para sincronización y administración.
 
-### Levantar PostgreSQL
+Desde `heyPudu-backend/` se puede levantar RabbitMQ con:
 
 ```bash
-docker run -d --name heypudu-postgres \
-  -e POSTGRES_DB=heypudu \
-  -e POSTGRES_USER=heypudu_admin \
-  -e POSTGRES_PASSWORD=devpassword \
-  -p 5432:5432 \
-  postgres:16
+docker compose -f docker-compose.rabbit.yml up -d
 ```
 
-Crear el esquema:
-
-```sql
-CREATE SCHEMA IF NOT EXISTS heypudu_users;
-CREATE USER heypudu_users_user WITH PASSWORD 'devpassword';
-GRANT ALL PRIVILEGES ON SCHEMA heypudu_users TO heypudu_users_user;
-```
-
-### Ejecutar
+Luego, desde este directorio:
 
 ```bash
 ./gradlew bootRun
@@ -321,23 +403,22 @@ curl http://localhost:8082/actuator/health
 
 | Decisión | Razón |
 |---|---|
-| `cognito_sub` como clave externa | Identidad del usuario en Cognito |
-| `avatar_key` en lugar de URL | Consistencia con otros microservicios; permite cambiar de proveedor de storage |
-| `is_verified` como atributo | No es un rol, es una cualidad del perfil |
-| Banear ≠ eliminar | Permite desbanear sin pérdida de datos |
+| `cognito_sub` como identidad externa | Mantiene la relación con Cognito |
+| `avatar_key` en lugar de URL | Permite regenerar URLs temporales |
+| Banear no elimina datos | Permite desbanear sin pérdida |
 | Anonimización al eliminar | Evita referencias rotas en otras BD |
 | Contadores desnormalizados | Lectura rápida del perfil |
-| Cambio de username cada 30 días | Evita abuso y suplantación |
-| Endpoints internos abiertos (EP1) | Consistencia; trabajo futuro migrar a token de servicio |
-| `PostClient` sin uso en EP1 | Documentado para trabajo futuro |
+| Eventos RabbitMQ | Desacopla notificaciones de las operaciones principales |
+| ACK manual y DLQ | Hace visibles los fallos de consumo |
 
 ## Trabajo futuro
 
-- Token de servicio para endpoints internos
-- Sincronización asíncrona de `username`/`avatar` con `ms-posts`
-- `post_count` actualizado vía eventos
-- Eliminación diferida 30 días (con cancelación)
-- Búsqueda con `pg_trgm`
+- Token de servicio para proteger endpoints internos.
+- Activar el cliente de posts si se requiere sincronización adicional de
+  perfiles.
+- Retry y circuit breaker para clientes HTTP.
+- Eliminación diferida de cuentas con posibilidad de cancelación.
+- Búsqueda avanzada con `pg_trgm`.
 
 ## Autor
 

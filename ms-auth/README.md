@@ -2,15 +2,24 @@
 
 Microservicio de autenticación y sincronización de usuarios para **heyPudú!**.
 
-## Descripción
+## Responsabilidad
 
-`ms-auth` es el punto de entrada entre AWS Cognito y el resto del sistema. No gestiona credenciales (eso lo hace Cognito), sino que:
+`ms-auth` es el punto de integración entre AWS Cognito y el dominio de
+usuarios. No almacena contraseñas ni implementa el login; Cognito gestiona las
+credenciales y emite los JWT.
 
-- Sincroniza el usuario de Cognito con la base de datos propia del microservicio.
+El servicio:
+
+- Sincroniza usuarios autenticados de Cognito con `heypudu_auth`.
 - Devuelve los datos del usuario autenticado a partir del JWT.
-- Registra qué usuarios han iniciado sesión y su estado (`ACTIVE`, `BANNED`, `DELETED`).
-- Al crear un usuario nuevo, crea también su perfil base en `ms-users`.
-- Expone endpoints internos para deshabilitar, habilitar o eliminar usuarios en Cognito (llamados por `ms-users` al banear o eliminar cuentas).
+- Crea el perfil base correspondiente en `ms-users`.
+- Administra operaciones de Cognito solicitadas por `ms-users`: deshabilitar,
+  habilitar y eliminar usuarios.
+
+`ms-auth` no utiliza RabbitMQ. Sus operaciones de sincronización y
+administración de Cognito son llamadas HTTP síncronas, mientras que RabbitMQ
+se utiliza entre los microservicios de publicaciones, interacciones y
+usuarios.
 
 ## Tecnologías
 
@@ -20,16 +29,16 @@ Microservicio de autenticación y sincronización de usuarios para **heyPudú!**
 | Framework | Spring Boot 3.5.x |
 | Build | Gradle 8.10.2+ |
 | Seguridad | Spring Security + OAuth2 Resource Server |
-| Autenticación | AWS Cognito (JWT) |
-| Administración Cognito | AWS SDK v2 (cognitoidentityprovider) |
+| Identidad | AWS Cognito User Pool |
+| Administración Cognito | AWS SDK v2 |
 | Persistencia | Spring Data JPA + PostgreSQL |
 | Migraciones | Flyway |
-| Cliente HTTP | RestClient (Spring 6.1+) |
+| Comunicación HTTP | RestClient hacia `ms-users` |
 | Monitoreo | Spring Boot Actuator |
 
 ## Arquitectura
 
-```
+```text
 [React + AWS Amplify]
         |
         | JWT
@@ -37,23 +46,19 @@ Microservicio de autenticación y sincronización de usuarios para **heyPudú!**
 [AWS API Gateway]
         |
         v
-[ms-auth :8081]  --->  [ms-users :8082]   (crear perfil base)
+[ms-auth :8081] ---> [ms-users :8082]
         |
-        | (AdminDisable / AdminEnable / AdminDelete)
-        v
-[AWS Cognito]
-
-[ms-users] ---> [ms-auth] (endpoints internos para habilitar/deshabilitar/eliminar)
+        `--> [AWS Cognito User Pool]
 ```
 
 - **Puerto:** `8081`
 - **Esquema de BD:** `heypudu_auth`
-- **IdP:** AWS Cognito (User Pool)
-- **Depende de:** `ms-users`
+- **Dependencia HTTP:** `ms-users` durante el primer `sync`.
+- **Proveedor de identidad:** AWS Cognito.
 
 ## Estructura del proyecto
 
-```
+```text
 ms-auth/
 ├── build.gradle
 ├── settings.gradle
@@ -72,32 +77,12 @@ ms-auth/
     │   ├── client/
     │   │   └── UserClient.java
     │   ├── dto/
-    │   │   ├── request/
-    │   │   │   ├── SyncUserRequest.java
-    │   │   │   └── CreateUserProfileRequest.java
-    │   │   └── response/
-    │   │       ├── AuthUserResponse.java
-    │   │       ├── SyncUserResponse.java
-    │   │       └── UserSummaryResponse.java
     │   ├── exception/
-    │   │   ├── GlobalExceptionHandler.java
-    │   │   ├── ResourceNotFoundException.java
-    │   │   └── BusinessException.java
     │   ├── mapper/
-    │   │   └── AuthUserMapper.java
     │   ├── model/
-    │   │   └── AuthUser.java
     │   ├── repository/
-    │   │   └── AuthUserRepository.java
     │   ├── security/
-    │   │   ├── JwtAuthConverter.java
-    │   │   └── CognitoUserExtractor.java
     │   └── service/
-    │       ├── AuthService.java
-    │       ├── CognitoAdminService.java
-    │       └── impl/
-    │           ├── AuthServiceImpl.java
-    │           └── CognitoAdminServiceImpl.java
     └── resources/
         ├── application.yml
         ├── application-dev.yml
@@ -108,20 +93,25 @@ ms-auth/
 
 ## Endpoints
 
-### Endpoints públicos
-
-| Método | Endpoint | Descripción | Rol |
-|---|---|---|---|
-| `GET` | `/api/v1/auth/me` | Datos del usuario autenticado | `user`, `admin` |
-| `POST` | `/api/v1/auth/sync` | Sincronizar usuario de Cognito con la BD y con `ms-users` | `user`, `admin` |
-
-### Endpoints internos
+### Autenticación y sincronización
 
 | Método | Endpoint | Descripción |
 |---|---|---|
-| `PUT` | `/api/v1/internal/users/{cognitoSub}/disable` | Deshabilitar usuario en Cognito |
-| `PUT` | `/api/v1/internal/users/{cognitoSub}/enable` | Habilitar usuario en Cognito |
-| `DELETE` | `/api/v1/internal/users/{cognitoSub}` | Eliminar usuario de Cognito |
+| `GET` | `/api/v1/auth/me` | Datos del usuario autenticado |
+| `POST` | `/api/v1/auth/sync` | Sincronizar Cognito, `ms-auth` y `ms-users` |
+
+Ambos endpoints requieren un JWT válido de Cognito.
+
+### Internos
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `PUT` | `/api/v1/internal/users/{cognitoSub}/disable` | Deshabilitar en Cognito |
+| `PUT` | `/api/v1/internal/users/{cognitoSub}/enable` | Habilitar en Cognito |
+| `DELETE` | `/api/v1/internal/users/{cognitoSub}` | Eliminar de Cognito |
+
+Estos endpoints son invocados por `ms-users` durante el baneo, desbaneo o
+eliminación de una cuenta.
 
 ### Salud
 
@@ -130,39 +120,15 @@ ms-auth/
 | `GET` | `/actuator/health` |
 | `GET` | `/actuator/info` |
 
-## Detalle de los endpoints principales
+## Detalle del `sync`
 
-### `GET /api/v1/auth/me`
+`POST /api/v1/auth/sync` es idempotente:
 
-Devuelve los datos del usuario autenticado a partir del JWT.
+- Si el usuario no existe en `auth_users`, crea el registro con estado `ACTIVE`
+  y llama a `ms-users` para crear el perfil base.
+- Si ya existe, devuelve el registro existente y no duplica el perfil.
 
-- **Body:** no recibe.
-- **Respuesta `200 OK`:**
-
-```json
-{
-  "id": "3f1c9e2b-...",
-  "cognitoSub": "a1b2c3d4-...",
-  "email": "usuario@ejemplo.com",
-  "status": "ACTIVE",
-  "roles": ["user"],
-  "createdAt": "2026-10-06T12:00:00Z"
-}
-```
-
-### `POST /api/v1/auth/sync`
-
-Sincroniza el usuario. **Idempotente**.
-
-- Si el usuario no existe:
-  1. Lo crea en `auth_users` con `status = ACTIVE`.
-  2. Llama a `ms-users` para crear el perfil base con valores temporales.
-  3. Devuelve `created = true`.
-- Si el usuario ya existe:
-  1. Devuelve el registro existente con `created = false`.
-  2. **No** vuelve a llamar a `ms-users`.
-
-- **Respuesta `200 OK`:**
+Respuesta de ejemplo:
 
 ```json
 {
@@ -174,6 +140,9 @@ Sincroniza el usuario. **Idempotente**.
   "createdAt": "2026-10-06T12:00:00Z"
 }
 ```
+
+El perfil base usa valores temporales (`Usuario` y `user_<sub8>`) hasta que el
+usuario completa sus datos desde el frontend.
 
 ## Modelo de datos
 
@@ -187,107 +156,91 @@ Sincroniza el usuario. **Idempotente**.
 | `status` | `VARCHAR(20)` | `NOT NULL DEFAULT 'ACTIVE'` |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL` |
 
-> **Nota:** los datos completos del perfil viven en `ms-users`.
+Los datos completos del perfil, seguidores y notificaciones viven en
+`ms-users`.
 
-## Flujo de sincronización
+## Flujos principales
 
-```
-[Usuario se registra en Cognito desde React con Amplify]
+### Registro y primer acceso
+
+```text
+[Usuario se registra en Cognito mediante Amplify]
         |
         v
-[Cognito crea la cuenta y devuelve JWT]
+[Cognito emite el JWT]
         |
         v
 [React llama a POST /api/v1/auth/sync]
         |
         v
-[ms-auth valida el JWT y extrae sub + email]
+[ms-auth extrae sub y email del JWT]
         |
-        v
-[ms-auth verifica si ya existe por cognito_sub]
+        +--> Usuario existente: devuelve created=false
         |
-        +--- Existe → devuelve created = false
-        |
-        +--- No existe
-                |
-                v
-        [ms-auth crea registro en auth_users]
-                |
-                v
-        [ms-auth llama a ms-users: POST /api/v1/internal/users
-         con cognitoSub, name="Usuario", username="user_<sub8>"]
-                |
-                v
-        [ms-users crea el perfil base]
-                |
-                v
-        [ms-auth devuelve created = true]
-                |
-                v
-        [React redirige a "completar perfil"]
-                |
-                v
-        [Usuario llama a PUT /api/v1/users/me con datos reales]
+        `--> Usuario nuevo:
+              +--> Inserta auth_users
+              +--> POST /api/v1/internal/users en ms-users
+              `--> Devuelve created=true
 ```
 
-## Flujo de baneo
+### Baneo
 
-```
-[Admin: PUT /api/v1/admin/users/{id}/ban en ms-users]
+```text
+[Admin solicita ban en ms-users]
         |
         v
-[ms-users cambia status a BANNED]
+[ms-users actualiza status y llama a ms-auth]
         |
         v
-[ms-users llama a PUT /api/v1/internal/users/{sub}/disable en ms-auth]
-        |
-        v
-[ms-auth llama a Cognito AdminDisableUser]
-        |
-        v
-[Cognito deshabilita al usuario]
+[ms-auth ejecuta Cognito AdminDisableUser]
 ```
 
-## Flujo de eliminación de cuenta
+### Desbaneo
 
+```text
+[Admin solicita unban en ms-users]
+        |
+        v
+[ms-users llama a ms-auth]
+        |
+        v
+[ms-auth ejecuta Cognito AdminEnableUser]
 ```
-[Usuario: DELETE /api/v1/users/me en ms-users]
+
+### Eliminación de cuenta
+
+```text
+[Usuario elimina su cuenta en ms-users]
         |
         v
-[ms-users anonimiza: name, username, bio, avatar_key]
+[ms-users anonimiza el perfil y cambia status a DELETED]
         |
         v
-[ms-users cambia status a DELETED]
+[ms-users llama a ms-auth]
         |
         v
-[ms-users llama a DELETE /api/v1/internal/users/{sub} en ms-auth]
-        |
-        v
-[ms-auth llama a Cognito AdminDeleteUser]
-        |
-        v
-[Cognito elimina al usuario]
+[ms-auth ejecuta Cognito AdminDeleteUser]
 ```
 
 ## Configuración
 
-### Variables de entorno en producción
-
 | Variable | Descripción |
 |---|---|
-| `SPRING_PROFILES_ACTIVE` | `prod` |
+| `SPRING_PROFILES_ACTIVE` | Perfil activo, normalmente `prod` |
 | `DB_URL` | JDBC con `currentSchema=heypudu_auth` |
-| `DB_USERNAME` | Usuario BD |
-| `DB_PASSWORD` | Contraseña BD |
-| `COGNITO_ISSUER_URI` | Issuer Cognito |
-| `COGNITO_JWK_SET_URI` | JWKS Cognito |
-| `COGNITO_USER_POOL_ID` | ID del User Pool de Cognito |
+| `DB_USERNAME` | Usuario de PostgreSQL |
+| `DB_PASSWORD` | Contraseña de PostgreSQL |
+| `COGNITO_ISSUER_URI` | Issuer del User Pool |
+| `COGNITO_JWK_SET_URI` | URL JWKS de Cognito |
+| `COGNITO_USER_POOL_ID` | ID del User Pool |
 | `AWS_REGION` | Región de AWS |
-| `CLIENTS_USERS_BASE_URL` | URL de `ms-users` |
+| `CLIENTS_USERS_BASE_URL` | URL base de `ms-users` |
 
-### Permisos requeridos en Cognito
+No se deben versionar contraseñas, tokens ni archivos `.env` reales.
 
-El rol de IAM del EC2 debe tener permisos para:
+### Permisos IAM requeridos
+
+El rol de ejecución necesita:
 
 - `cognito-idp:AdminDisableUser`
 - `cognito-idp:AdminEnableUser`
@@ -297,53 +250,44 @@ El rol de IAM del EC2 debe tener permisos para:
 
 ### Requisitos
 
-- JDK 25
-- PostgreSQL (Docker)
-- Credenciales AWS configuradas (`aws configure` o variables de entorno)
-- `ms-users` corriendo en `:8082`
+- JDK 25.
+- Docker y PostgreSQL.
+- Credenciales AWS configuradas para el SDK.
+- `ms-users` ejecutándose en `:8082` para el flujo de sincronización.
 
-### Levantar PostgreSQL
+Desde `heyPudu-backend/` se puede levantar PostgreSQL con la infraestructura
+local del proyecto o iniciar un contenedor compatible con `DB_URL`.
 
-```bash
-docker run -d --name heypudu-postgres \
-  -e POSTGRES_DB=heypudu \
-  -e POSTGRES_USER=heypudu_admin \
-  -e POSTGRES_PASSWORD=devpassword \
-  -p 5432:5432 \
-  postgres:16
-```
-
-Crear el esquema:
-
-```sql
-CREATE SCHEMA IF NOT EXISTS heypudu_auth;
-CREATE USER heypudu_auth_user WITH PASSWORD 'devpassword';
-GRANT ALL PRIVILEGES ON SCHEMA heypudu_auth TO heypudu_auth_user;
-```
-
-### Ejecutar
+Luego, desde este directorio:
 
 ```bash
 ./gradlew bootRun
+```
+
+Verificar:
+
+```bash
+curl http://localhost:8081/actuator/health
 ```
 
 ## Decisiones de diseño
 
 | Decisión | Razón |
 |---|---|
-| `ms-auth` separado de `ms-users` | Responsabilidades distintas: autenticación vs perfil de negocio |
-| BD propia (`heypudu_auth`) | Principio de database-per-service |
-| `cognito_sub` como clave externa | Identidad del usuario en Cognito |
-| El sync llama a `ms-users` | El frontend solo hace una llamada; el sistema crea ambos registros |
-| `username` temporal `user_<sub8>` | El usuario completa su perfil después |
-| Endpoints internos abiertos (EP1) | Consistencia con los demás microservicios |
-| SDK de Cognito solo en `ms-auth` | Es el único microservicio que administra usuarios en Cognito |
+| Cognito como proveedor de identidad | Evita almacenar contraseñas propias |
+| `ms-auth` separado de `ms-users` | Aísla identidad de la lógica de perfil |
+| BD propia (`heypudu_auth`) | Aplica database-per-service |
+| `cognito_sub` como identidad externa | Relaciona el JWT con el registro local |
+| `sync` idempotente | Evita duplicar usuarios y perfiles |
+| SDK de Cognito solo en `ms-auth` | Centraliza operaciones administrativas |
+| Comunicación HTTP con `ms-users` | El flujo de sync requiere respuesta inmediata |
 
 ## Trabajo futuro
 
-- Token de servicio para endpoints internos
-- Retry con Resilience4j hacia `ms-users`
-- Sincronización asíncrona con SQS/SNS
+- Token de servicio para proteger los endpoints internos.
+- Retry y circuit breaker para llamadas a `ms-users`.
+- Auditoría centralizada de operaciones administrativas.
+- Reconciliación periódica entre Cognito y `auth_users`.
 
 ## Autor
 

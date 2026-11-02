@@ -2,14 +2,17 @@
 
 Microservicio de interacciones sociales para **heyPudú!**.
 
-## Descripción
+## Responsabilidad
 
-`ms-interactions` gestiona las interacciones que los usuarios tienen con las publicaciones:
+`ms-interactions` gestiona:
 
-- **Likes**: dar, quitar, listar, contar.
-- **Comentarios**: crear, listar, eliminar (solo texto en EP1).
-
-Forma parte de la arquitectura de microservicios de heyPudú!, junto a `ms-auth`, `ms-users` y `ms-posts`.
+- Likes sobre publicaciones.
+- Comentarios de texto.
+- Reportes de comentarios y sus estados de moderación.
+- Eliminación de todas las interacciones asociadas a una publicación cuando
+  recibe el comando `post.delete`.
+- Publicación de eventos de likes y comentarios para notificaciones y
+  auditoría.
 
 ## Tecnologías
 
@@ -22,12 +25,13 @@ Forma parte de la arquitectura de microservicios de heyPudú!, junto a `ms-auth`
 | Autenticación | AWS Cognito (JWT) |
 | Persistencia | Spring Data JPA + PostgreSQL |
 | Migraciones | Flyway |
-| Cliente HTTP | RestClient (Spring 6.1+) |
+| Comunicación HTTP | RestClient hacia `ms-posts` |
+| Mensajería | RabbitMQ mediante Spring AMQP |
 | Monitoreo | Spring Boot Actuator |
 
 ## Arquitectura
 
-```
+```text
 [React + AWS Amplify]
         |
         | JWT
@@ -35,20 +39,77 @@ Forma parte de la arquitectura de microservicios de heyPudú!, junto a `ms-auth`
 [AWS API Gateway]
         |
         v
-[ms-interactions :8084]  --->  [ms-posts :8083]
-        |                              |
-        v                              v
-[heypudu_interactions]          [heypudu_posts]
+[ms-interactions :8084] ---> [ms-posts :8083]
+        |                         |
+        v                         `--> contadores de likes/comentarios
+[Neon PostgreSQL: heypudu_interactions]
+        |
+        `--> [RabbitMQ: comandos y eventos]
 ```
 
 - **Puerto:** `8084`
 - **Esquema de BD:** `heypudu_interactions`
-- **Depende de:** `ms-posts` (para validar existencia de posts y actualizar contadores).
-- **IdP:** AWS Cognito (User Pool).
+- **Dependencia HTTP:** `ms-posts` para validar publicaciones y actualizar sus
+  contadores.
+- **Dependencia de mensajería:** RabbitMQ para eliminar interacciones de forma
+  asíncrona y publicar eventos.
+- **IdP:** AWS Cognito mediante JWT.
+
+## Mensajería RabbitMQ
+
+### Consumir `post.delete`
+
+`PostCommandListener` consume `q.heypudu.command`, enlazada a
+`ex.heypudu.cmd` con la routing key `post.delete`.
+
+Cuando recibe el comando:
+
+1. Elimina los comentarios del `postId`.
+2. Elimina los likes del `postId`.
+3. Envía ACK manual solo si ambas operaciones terminan correctamente.
+4. Envía NACK sin reencolado si ocurre un error; RabbitMQ dirige el mensaje a
+   `q.heypudu.command.dlq`.
+
+Este flujo es asíncrono: `ms-posts` puede responder al `DELETE` de la
+publicación sin esperar a que finalice esta limpieza.
+
+### Publicar eventos
+
+`InteractionEventPublisher` publica en `ex.heypudu.events`:
+
+| Routing key | Cuándo se publica | Consumidores |
+|---|---|---|
+| `interaction.liked` | Se crea un like nuevo | `ms-users` y auditoría |
+| `interaction.commented` | Se crea un comentario | `ms-users` y auditoría |
+
+El evento incluye `eventId`, fecha, actor, destinatario, publicación y, para
+comentarios, el `commentId`. El destinatario es el autor de la publicación y
+permite que `ms-users` persista la notificación correspondiente.
+
+### DLQ
+
+`DeadLetterListener` registra mensajes que no pudieron procesarse en:
+
+- `q.heypudu.command.dlq`
+- `q.heypudu.notification.dlq`
+- `q.heypudu.audit.dlq`
+
+La configuración compartida usa ACK manual, `default-requeue-rejected=false`,
+TTL, límite de mensajes y límite de entregas. La topología completa se define
+en `RabbitTopologyConfig`.
+
+| Elemento | Valor |
+|---|---|
+| Exchange de comandos | `ex.heypudu.cmd` |
+| Exchange de eventos | `ex.heypudu.events` |
+| Exchange de errores | `ex.heypudu.dlx` |
+| Cola de comandos | `q.heypudu.command` |
+| DLQ de comandos | `q.heypudu.command.dlq` |
+| Comando consumido | `post.delete` |
 
 ## Estructura del proyecto
 
-```
+```text
 ms-interactions/
 ├── build.gradle
 ├── settings.gradle
@@ -59,47 +120,35 @@ ms-interactions/
     │   ├── config/
     │   │   ├── SecurityConfig.java
     │   │   ├── JwtConfig.java
-    │   │   └── RestClientConfig.java
+    │   │   ├── RestClientConfig.java
+    │   │   └── amqp/
     │   ├── controller/
     │   │   ├── LikeController.java
-    │   │   └── CommentController.java
+    │   │   ├── CommentController.java
+    │   │   ├── CommentReportController.java
+    │   │   └── InternalInteractionController.java
     │   ├── client/
     │   │   └── PostClient.java
+    │   ├── messaging/
+    │   │   ├── PostCommandListener.java
+    │   │   ├── InteractionEventPublisher.java
+    │   │   └── DeadLetterListener.java
     │   ├── dto/
-    │   │   ├── request/
-    │   │   │   └── CreateCommentRequest.java
-    │   │   └── response/
-    │   │       ├── LikeResponse.java
-    │   │       ├── CommentResponse.java
-    │   │       └── LikeCountResponse.java
     │   ├── exception/
-    │   │   ├── GlobalExceptionHandler.java
-    │   │   ├── ResourceNotFoundException.java
-    │   │   └── BusinessException.java
     │   ├── mapper/
-    │   │   └── InteractionMapper.java
     │   ├── model/
-    │   │   ├── Like.java
-    │   │   └── Comment.java
     │   ├── repository/
-    │   │   ├── LikeRepository.java
-    │   │   └── CommentRepository.java
     │   ├── security/
-    │   │   ├── JwtAuthConverter.java
-    │   │   └── CognitoUserExtractor.java
     │   └── service/
-    │       ├── LikeService.java
-    │       ├── CommentService.java
-    │       └── impl/
-    │           ├── LikeServiceImpl.java
-    │           └── CommentServiceImpl.java
     └── resources/
         ├── application.yml
         ├── application-dev.yml
         ├── application-prod.yml
         └── db/migration/
             ├── V1__init_likes_table.sql
-            └── V2__init_comments_table.sql
+            ├── V2__init_comments_table.sql
+            ├── V3__init_comment_reports.sql
+            └── V4__allow_repeat_reports.sql
 ```
 
 ## Endpoints
@@ -108,163 +157,100 @@ Todos los endpoints están versionados bajo `/api/v1`.
 
 ### Likes
 
-| Método | Endpoint | Descripción | Rol |
-|---|---|---|---|
-| `POST` | `/api/v1/posts/{postId}/likes` | Dar like a un post | `user`, `admin` |
-| `DELETE` | `/api/v1/posts/{postId}/likes` | Quitar like | `user`, `admin` |
-| `GET` | `/api/v1/posts/{postId}/likes` | Listar likes del post (paginado) | `user`, `admin` |
-| `GET` | `/api/v1/posts/{postId}/likes/count` | Contar likes del post | `user`, `admin` |
-| `GET` | `/api/v1/users/me/likes` | Listar mis likes (paginado) | `user`, `admin` |
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `POST` | `/api/v1/posts/{postId}/likes` | Dar like a una publicación |
+| `DELETE` | `/api/v1/posts/{postId}/likes` | Quitar el like propio |
+| `GET` | `/api/v1/posts/{postId}/likes` | Listar likes paginados |
+| `GET` | `/api/v1/posts/{postId}/likes/count` | Contar likes |
+| `GET` | `/api/v1/users/me/likes` | Listar likes del usuario |
 
 ### Comentarios
 
-| Método | Endpoint | Descripción | Rol |
-|---|---|---|---|
-| `POST` | `/api/v1/posts/{postId}/comments` | Crear comentario (texto) | `user`, `admin` |
-| `GET` | `/api/v1/posts/{postId}/comments` | Listar comentarios (paginado) | `user`, `admin` |
-| `DELETE` | `/api/v1/comments/{commentId}` | Eliminar comentario propio | `user`, `admin` |
-| `DELETE` | `/api/v1/admin/comments/{commentId}` | Eliminar cualquier comentario | `admin` |
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `POST` | `/api/v1/posts/{postId}/comments` | Crear comentario de texto |
+| `GET` | `/api/v1/posts/{postId}/comments` | Listar comentarios paginados |
+| `DELETE` | `/api/v1/comments/{commentId}` | Eliminar comentario propio |
+| `DELETE` | `/api/v1/admin/comments/{commentId}` | Eliminar cualquier comentario |
 
-### Endpoints de salud
+### Reportes
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `POST` | `/api/v1/comments/{commentId}/reports` | Reportar un comentario |
+| `GET` | `/api/v1/admin/comment-reports` | Listar reportes abiertos |
+| `PUT` | `/api/v1/admin/comment-reports/{reportId}/{status}` | Cambiar estado |
+| `GET` | `/api/v1/internal/comment-reports/counts` | Contadores por autor |
+
+Los endpoints administrativos requieren `ROLE_ADMIN`. Los endpoints internos
+son consumidos por otros servicios y no forman parte del flujo público del
+frontend.
+
+### Internos
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `DELETE` | `/api/v1/internal/posts/{postId}/interactions` | Eliminar likes y comentarios de un post |
+
+Este endpoint REST se conserva para compatibilidad interna, pero el flujo
+principal de eliminación de publicaciones utiliza el comando RabbitMQ
+`post.delete`.
+
+### Salud
 
 | Método | Endpoint | Acceso |
 |---|---|---|
 | `GET` | `/actuator/health` | Público |
-| `GET` | `/actuator/info` | Público (solo en `dev`) |
-
-### Detalle de los endpoints principales
-
-#### `POST /api/v1/posts/{postId}/likes`
-
-Dar like a un post. **Idempotente**: si el usuario ya dio like, devuelve el like existente sin crear uno nuevo.
-
-- **Body:** no recibe.
-- **Respuesta `200 OK`:**
-
-```json
-{
-  "id": "8a4b2c1d-...",
-  "postId": "3f1c9e2b-...",
-  "userId": "a1b2c3d4-...",
-  "createdAt": "2026-10-06T12:00:00Z"
-}
-```
-
-#### `DELETE /api/v1/posts/{postId}/likes`
-
-Quitar el like de un post. **Idempotente**: si no existe, no hace nada.
-
-- **Respuesta `204 No Content`**.
-
-#### `GET /api/v1/posts/{postId}/likes`
-
-Listar likes de un post, paginados.
-
-- **Query params:** `?page=0&size=20&sort=createdAt,desc`
-- **Respuesta `200 OK`:**
-
-```json
-{
-  "content": [
-    {
-      "id": "8a4b2c1d-...",
-      "postId": "3f1c9e2b-...",
-      "userId": "a1b2c3d4-...",
-      "createdAt": "2026-10-06T12:00:00Z"
-    }
-  ],
-  "page": 0,
-  "size": 20,
-  "totalElements": 15,
-  "totalPages": 1,
-  "last": true
-}
-```
-
-#### `POST /api/v1/posts/{postId}/comments`
-
-Crear un comentario en un post.
-
-- **Body:**
-
-```json
-{
-  "content": "Buenísimo el briefcast, me encantó."
-}
-```
-
-- **Validaciones:** `content` no vacío, máximo 500 caracteres.
-- **Respuesta `200 OK`:**
-
-```json
-{
-  "id": "9b5c3d2e-...",
-  "postId": "3f1c9e2b-...",
-  "userId": "a1b2c3d4-...",
-  "content": "Buenísimo el briefcast, me encantó.",
-  "createdAt": "2026-10-06T12:00:00Z"
-}
-```
-
-#### `DELETE /api/v1/comments/{commentId}`
-
-Eliminar un comentario propio. Solo el autor puede eliminar su comentario.
-
-- **Respuesta `204 No Content`**.
-- **Respuesta `400 Bad Request`** si el comentario no es del usuario autenticado.
-
-#### `DELETE /api/v1/admin/comments/{commentId}`
-
-Eliminar cualquier comentario. Solo admins.
-
-- **Requiere:** rol `ROLE_ADMIN` (grupo `admin` en Cognito).
-- **Respuesta `204 No Content`**.
+| `GET` | `/actuator/info` | Público según el perfil |
 
 ## Modelo de datos
 
 ### Tabla `likes` (esquema `heypudu_interactions`)
 
-| Columna | Tipo | Restricciones | Descripción |
-|---|---|---|---|
-| `id` | `UUID` | `PRIMARY KEY` | Clave primaria. |
-| `post_id` | `UUID` | `NOT NULL` | Post al que se da like. |
-| `user_id` | `UUID` | `NOT NULL` | Usuario que da like (`cognito_sub`). |
-| `created_at` | `TIMESTAMPTZ` | `NOT NULL` | Fecha de creación. |
+| Columna | Tipo | Restricciones |
+|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY` |
+| `post_id` | `UUID` | `NOT NULL` |
+| `user_id` | `UUID` | `NOT NULL` |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL` |
 
-- **`UNIQUE (post_id, user_id)`**: un usuario no puede dar like dos veces al mismo post.
+Existe una restricción `UNIQUE (post_id, user_id)` para evitar likes
+duplicados.
 
-### Tabla `comments` (esquema `heypudu_interactions`)
+### Tabla `comments`
 
-| Columna | Tipo | Restricciones | Descripción |
-|---|---|---|---|
-| `id` | `UUID` | `PRIMARY KEY` | Clave primaria. |
-| `post_id` | `UUID` | `NOT NULL` | Post comentado. |
-| `user_id` | `UUID` | `NOT NULL` | Autor del comentario (`cognito_sub`). |
-| `content` | `VARCHAR(500)` | `NOT NULL` | Texto del comentario. |
-| `created_at` | `TIMESTAMPTZ` | `NOT NULL` | Fecha de creación. |
+| Columna | Tipo | Restricciones |
+|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY` |
+| `post_id` | `UUID` | `NOT NULL` |
+| `user_id` | `UUID` | `NOT NULL` |
+| `content` | `VARCHAR(500)` | `NOT NULL` |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL` |
+
+Las tablas de reportes de comentarios se crean mediante
+`V3__init_comment_reports.sql` y `V4__allow_repeat_reports.sql`.
 
 ## Roles y seguridad
 
-| Grupo Cognito | Rol Spring | Uso en `ms-interactions` |
+| Grupo Cognito | Rol Spring | Uso |
 |---|---|---|
-| `user` | `ROLE_USER` | Interacciones normales (likes, comentarios). |
-| `admin` | `ROLE_ADMIN` | Eliminar cualquier comentario, ver cualquier interacción. |
-| `internal` | `ROLE_INTERNAL` | (Trabajo futuro) Cliente de servicio para endpoints internos. |
+| `user` | `ROLE_USER` | Likes, comentarios y reportes |
+| `admin` | `ROLE_ADMIN` | Moderación y eliminación administrativa |
 
-Los roles viajan en el claim `cognito:groups` del JWT y son convertidos a `GrantedAuthority` por `JwtAuthConverter`.
+Los roles viajan en el claim `cognito:groups` del JWT y son convertidos a
+autoridades por `JwtAuthConverter`.
 
 ## Comunicación con `ms-posts`
 
-`ms-interactions` se comunica con `ms-posts` para dos operaciones:
+`PostClient` utiliza `RestClient` para:
 
-| Operación | Método y endpoint en `ms-posts` | Cuándo se llama |
+| Operación | Endpoint | Cuándo |
 |---|---|---|
-| Validar que un post existe | `GET /api/v1/posts/{id}` | Antes de crear un like o un comentario. |
-| Actualizar contadores | `PATCH /api/v1/internal/posts/{id}/counters` | Al crear o eliminar un like o comentario. |
+| Validar publicación | `GET /api/v1/posts/{id}` | Antes de crear un like o comentario |
+| Actualizar contadores | `PATCH /api/v1/internal/posts/{id}/counters` | Al crear o eliminar likes o comentarios |
 
-### Contrato del endpoint de contadores
-
-- **Request:**
+Request de contadores:
 
 ```json
 {
@@ -273,223 +259,131 @@ Los roles viajan en el claim `cognito:groups` del JWT y son convertidos a `Grant
 }
 ```
 
-- **Response:** `204 No Content` si tuvo éxito.
-
-- **Autenticación:** este endpoint interno **no requiere JWT** de usuario. Se documenta como trabajo futuro migrar a un token de servicio con `client_credentials`.
-
-### Cliente HTTP
-
-`PostClient` encapsula ambas operaciones. Se apoya en un `RestClient` configurado en `RestClientConfig`.
-
-- Si falla la validación del post → lanza `BusinessException`.
-- Si falla la actualización de contadores → lanza `BusinessException`.
-
-**Importante:** si `ms-posts` está caído, las operaciones de creación/eliminación de likes y comentarios fallan y se revierten por `@Transactional`. Esto evita inconsistencias entre los contadores de `ms-posts` y los registros reales de `ms-interactions`.
+La operación de creación o eliminación se revierte si la llamada requerida a
+`ms-posts` falla. La eliminación provocada por `post.delete` no depende de este
+cliente HTTP: usa los servicios locales de likes y comentarios.
 
 ## Configuración
 
-### Variables de entorno requeridas en producción
-
 | Variable | Descripción |
 |---|---|
-| `SPRING_PROFILES_ACTIVE` | Debe ser `prod` en producción. |
-| `DB_URL` | URL JDBC de PostgreSQL (incluye `currentSchema=heypudu_interactions`). |
-| `DB_USERNAME` | Usuario de BD. |
-| `DB_PASSWORD` | Contraseña de BD. |
-| `COGNITO_ISSUER_URI` | Issuer del User Pool de Cognito. |
-| `COGNITO_JWK_SET_URI` | Endpoint JWKS del User Pool. |
-| `CLIENTS_POSTS_BASE_URL` | URL base de `ms-posts`. |
+| `SPRING_PROFILES_ACTIVE` | Perfil activo, normalmente `prod` |
+| `DB_URL` | JDBC con `currentSchema=heypudu_interactions` |
+| `DB_USERNAME` | Usuario de PostgreSQL |
+| `DB_PASSWORD` | Contraseña de PostgreSQL |
+| `COGNITO_ISSUER_URI` | Issuer del User Pool de Cognito |
+| `COGNITO_JWK_SET_URI` | URL JWKS de Cognito |
+| `CLIENTS_POSTS_BASE_URL` | URL base de `ms-posts` |
+| `RABBITMQ_HOST` | Host de RabbitMQ |
+| `RABBITMQ_PORT` | Puerto AMQP, normalmente `5672` |
+| `RABBITMQ_USERNAME` | Usuario AMQP |
+| `RABBITMQ_PASSWORD` | Contraseña AMQP |
+| `RABBITMQ_VHOST` | Virtual host AMQP |
+| `RABBIT_MSG_TTL_MS` | TTL de mensajes |
+| `RABBIT_MAX_LENGTH` | Máximo de mensajes por cola |
+| `RABBIT_DELIVERY_LIMIT` | Límite de entregas |
 
-### Perfiles
-
-| Perfil | Uso | Credenciales | `ms-posts` |
-|---|---|---|---|
-| `dev` | Desarrollo local | Hardcodeadas | `http://localhost:8083` |
-| `prod` | Producción | Variables de entorno | Variable obligatoria |
+No se deben versionar contraseñas, tokens ni archivos `.env` reales.
 
 ## Ejecución local
 
 ### Requisitos
 
-- JDK 25
-- Docker (opcional, para PostgreSQL)
-- Gradle Wrapper (incluido en el repo)
-- **`ms-posts` corriendo** en `http://localhost:8083`
+- JDK 25.
+- Docker y Docker Compose.
+- PostgreSQL local o la base definida en `DB_URL`.
+- RabbitMQ local o accesible mediante las variables `RABBITMQ_*`.
+- `ms-posts` ejecutándose en `:8083` para validar publicaciones y ajustar
+  contadores.
 
-### Levantar PostgreSQL
+Desde `heyPudu-backend/` se puede levantar RabbitMQ con:
 
 ```bash
-docker run -d --name heypudu-postgres \
-  -e POSTGRES_DB=heypudu \
-  -e POSTGRES_USER=heypudu_admin \
-  -e POSTGRES_PASSWORD=devpassword \
-  -p 5432:5432 \
-  postgres:16
+docker compose -f docker-compose.rabbit.yml up -d
 ```
 
-Crear el esquema:
-
-```sql
-CREATE SCHEMA IF NOT EXISTS heypudu_interactions;
-
-CREATE USER heypudu_interactions_user WITH PASSWORD 'devpassword';
-GRANT ALL PRIVILEGES ON SCHEMA heypudu_interactions TO heypudu_interactions_user;
-```
-
-### Ejecutar el microservicio
+Luego, desde este directorio:
 
 ```bash
 ./gradlew bootRun
 ```
 
-El servicio queda disponible en `http://localhost:8084`.
-
-### Verificar que funciona
+Verificar:
 
 ```bash
 curl http://localhost:8084/actuator/health
 ```
 
-## Build y despliegue
-
-### Construir el JAR
-
-```bash
-./gradlew build
-```
-
-El JAR queda en `build/libs/ms-interactions-0.0.1-SNAPSHOT.jar`.
-
-### Construir la imagen Docker
-
-```bash
-docker build -t heypudu/ms-interactions:latest .
-```
-
-### Ejecutar el contenedor
-
-```bash
-docker run -d --name ms-interactions \
-  -p 8084:8084 \
-  -e SPRING_PROFILES_ACTIVE=prod \
-  -e DB_URL="jdbc:postgresql://host:5432/heypudu?currentSchema=heypudu_interactions" \
-  -e DB_USERNAME="heypudu_interactions_user" \
-  -e DB_PASSWORD="********" \
-  -e COGNITO_ISSUER_URI="https://cognito-idp.<region>.amazonaws.com/<poolId>" \
-  -e COGNITO_JWK_SET_URI="https://cognito-idp.<region>.amazonaws.com/<poolId>/.well-known/jwks.json" \
-  -e CLIENTS_POSTS_BASE_URL="http://ms-posts.internal:8083" \
-  heypudu/ms-interactions:latest
-```
-
 ## Flujos principales
 
-### Dar like a un post
+### Dar like
 
-```
-[React: POST /api/v1/posts/{postId}/likes]
+```text
+[POST /api/v1/posts/{postId}/likes]
         |
         v
-[ms-interactions valida JWT]
+[Validar JWT y extraer userId]
         |
         v
-[Extrae userId del JWT]
+[Comprobar like existente]
         |
-        v
-[Busca like existente (postId, userId)]
+        +--> Existe: devolver el existente
         |
-        +--- Existe → devuelve el existente
-        |
-        +--- No existe
-                |
-                v
-        [GET ms-posts /api/v1/posts/{postId}]  ← validar que existe
-                |
-                v
-        [Guardar like en BD]
-                |
-                v
-        [PATCH ms-posts /api/v1/internal/posts/{postId}/counters {likeDelta: 1}]
-                |
-                v
-        [Devolver LikeResponse]
+        `--> Validar post en ms-posts
+              |
+              +--> Guardar like
+              +--> Actualizar like_count en ms-posts
+              `--> Publicar interaction.liked
 ```
 
 ### Crear comentario
 
-```
-[React: POST /api/v1/posts/{postId}/comments con {content}]
+```text
+[POST /api/v1/posts/{postId}/comments]
         |
         v
-[ms-interactions valida JWT y DTO]
+[Validar JWT, contenido y existencia del post]
         |
         v
-[Extrae userId del JWT]
+[Guardar comentario]
         |
-        v
-[GET ms-posts /api/v1/posts/{postId}]  ← validar que existe
-        |
-        v
-[Guardar comentario en BD]
-        |
-        v
-[PATCH ms-posts /api/v1/internal/posts/{postId}/counters {commentDelta: 1}]
-        |
-        v
-[Devolver CommentResponse]
+        +--> Actualizar comment_count en ms-posts
+        `--> Publicar interaction.commented
 ```
 
-### Eliminar comentario propio
+### Eliminar publicación
 
-```
-[React: DELETE /api/v1/comments/{commentId}]
+```text
+[ms-posts publica post.delete]
         |
         v
-[ms-interactions valida JWT]
+[PostCommandListener recibe el comando]
         |
-        v
-[Busca comentario por id]
-        |
-        v
-[Verifica que userId del comentario == userId del JWT]
-        |
-        +--- No coincide → BusinessException (400)
-        |
-        +--- Coincide
-                |
-                v
-        [Eliminar comentario]
-                |
-                v
-        [PATCH ms-posts /counters {commentDelta: -1}]
-                |
-                v
-        [Devolver 204]
+        +--> Eliminar comentarios del post
+        +--> Eliminar likes del post
+        `--> ACK o NACK hacia RabbitMQ
 ```
 
 ## Decisiones de diseño
 
 | Decisión | Razón |
 |---|---|
-| Sin FK física hacia `posts` ni `users` | Esos datos viven en otras BD. La integridad se maneja a nivel de aplicación. |
-| Validar que el post existe antes de crear un like/comentario | Evita interacciones huérfanas. |
-| `POST /likes` idempotente | Evita duplicados por reintentos del frontend. |
-| `DELETE /likes` idempotente | Igual, sin error si el like no existe. |
-| Eliminar comentario: solo autor o admin | Regla de negocio clara, con endpoints separados. |
-| `like_count` y `comment_count` en `ms-posts` | Desnormalización para lectura rápida. `ms-interactions` los mantiene. |
-| Si `ms-posts` falla, la operación se revierte | Evita inconsistencias entre contadores y registros reales. |
-| `RestClient` en lugar de OpenFeign | Más simple para dos llamadas puntuales. |
-| Endpoints internos sin JWT (EP1) | Se documenta como trabajo futuro migrar a un token de servicio. |
-| Comentarios solo texto en EP1 | Audio queda como trabajo futuro. |
+| Sin FK física hacia `posts` o `users` | Los datos viven en otras bases |
+| Validar el post antes de crear interacción | Evita interacciones huérfanas |
+| `POST /likes` idempotente | Evita duplicados ante reintentos |
+| `DELETE /likes` idempotente | Repetir la operación no genera error |
+| Contadores en `ms-posts` | Lectura rápida del feed |
+| `post.delete` por RabbitMQ | Desacopla la limpieza de interacciones |
+| ACK manual y DLQ | Hace visible el fallo y evita pérdida silenciosa |
+| `RestClient` para operaciones síncronas | Adecuado para validar y actualizar contadores |
 
 ## Trabajo futuro
 
-- **Token de servicio para endpoints internos**: usar `client_credentials` en Cognito para que `ms-interactions` se autentique como cliente de servicio en lugar de reenviar el JWT del usuario.
-- **Comentarios en audio**: soporte para comentarios grabados (máx. 1 minuto).
-- **Reacciones**: más allá del like (me encanta, me ríe, etc.).
-- **Sincronización asíncrona**: usar SQS/SNS para actualizar contadores, en lugar de REST síncrono.
-- **Retry con Resilience4j**: si `ms-posts` está caído, reintentar con backoff exponencial antes de fallar.
-- **Edición de comentarios**: agregar `updated_at` y endpoint `PUT /api/v1/comments/{id}`.
-- **Notificaciones**: los likes y comentarios publican eventos RabbitMQ que `ms-users` persiste para el autor del post.
+- Token de servicio para proteger los endpoints internos.
+- Retry y circuit breaker para llamadas a `ms-posts`.
+- Comentarios de audio y edición de comentarios.
+- Reacciones adicionales al like.
+- Observabilidad centralizada de eventos y DLQ.
 
 ## Autor
 
