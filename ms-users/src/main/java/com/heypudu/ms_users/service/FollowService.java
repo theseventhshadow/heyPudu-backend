@@ -22,4 +22,6 @@ public interface FollowService {
     List<UUID> listFollowingIds(UUID userId);
 
     List<UUID> listFollowingCognitoSubs(UUID cognitoSub);
+
+    boolean isFollowing(UUID followerSub, UUID followedSub);
 }

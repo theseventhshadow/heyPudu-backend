@@ -60,6 +60,13 @@ public class InternalUserController {
         return ResponseEntity.ok(followService.listFollowingCognitoSubs(cognitoSub));
     }
 
+    @GetMapping("/by-cognito/{creatorSub}/followers/check")
+    public ResponseEntity<Boolean> isFollowing(
+            @PathVariable UUID creatorSub,
+            @RequestParam("followerCognitoSub") UUID followerCognitoSub) {
+        return ResponseEntity.ok(followService.isFollowing(followerCognitoSub, creatorSub));
+    }
+
     @PutMapping("/by-cognito/{cognitoSub}/post-count")
     public ResponseEntity<Void> updatePostCount(
             @PathVariable UUID cognitoSub,
