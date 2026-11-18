@@ -251,6 +251,9 @@ heypudu-backend/
 │
 ├── docker-compose.prod.yml             # Producción: cinco microservicios
 ├── docker-compose.rabbit.yml           # Clúster RabbitMQ de dos nodos
+├── docker-compose.kafka.yml            # Kafka KRaft + Kafka UI + init del tópico
+├── kafka/
+│   └── init-topics.sh                  # Declaración idempotente del tópico
 ├── rabbit/
 │   ├── cluster-init.sh                 # Unión idempotente de rabbit2 al clúster
 │   └── conf/10-heypudu.conf            # Colas quorum por defecto
@@ -890,6 +893,29 @@ docker exec heypudu-rabbit1 rabbitmqctl cluster_status
 La Management UI queda disponible en `http://localhost:15672` para `rabbit1`
 y en `http://localhost:15673` para `rabbit2`. Las credenciales se configuran
 mediante `.env`; nunca deben incluirse en este README.
+
+### Levantar Kafka
+
+Kafka corre en modo KRaft (sin Zookeeper), con un único broker y Kafka UI:
+
+```bash
+docker compose -f docker-compose.kafka.yml up -d
+docker compose -f docker-compose.kafka.yml logs -f kafka-init
+```
+
+El contenedor `kafka-init` declara el tópico `heypudu.live.events` (3
+particiones, factor de réplica 1 y retención de 7 días) y termina.
+
+- Kafka UI: `http://localhost:8090`
+- Bootstrap desde el host: `localhost:29092`
+- Bootstrap desde contenedores de Compose: `kafka:9092`
+
+Verificar el tópico:
+
+```bash
+docker exec heypudu-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 --describe --topic heypudu.live.events
+```
 
 ### Levantar PostgreSQL
 

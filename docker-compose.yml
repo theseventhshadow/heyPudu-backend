@@ -107,7 +107,10 @@ services:
       CLIENTS_USERS_BASE_URL: http://ms-users:8082
       MEDIAMTX_PUBLIC_URL: http://localhost:8889
       MEDIAMTX_SERVICE_TOKEN: dev-mediamtx-token
-      KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+      # Kafka se levanta con: docker compose -f docker-compose.kafka.yml up -d
+      # Dentro de la red de contenedores el broker responde en kafka:9092.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_LIVE_EVENTS: heypudu.live.events
     depends_on:
       postgres:
         condition: service_healthy
