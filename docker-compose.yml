@@ -117,5 +117,18 @@ services:
       postgres:
         condition: service_healthy
 
+  ms-analytics:
+    build: ./ms-analytics
+    container_name: heypudu-ms-analytics
+    ports:
+      - "8087:8087"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID/.well-known/jwks.json}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_LIVE_EVENTS: heypudu.live.events
+      KAFKA_CONSUMER_GROUP: live-analytics-group
+
 volumes:
   postgres_data:
