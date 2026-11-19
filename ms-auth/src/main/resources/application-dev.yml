@@ -18,8 +18,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID
-          jwk-set-uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID/.well-known/jwks.json
+          issuer-uri: ${COGNITO_ISSUER_URI:https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID}
+          jwk-set-uri: ${COGNITO_JWK_SET_URI:https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID/.well-known/jwks.json}
 
 clients:
   users:
@@ -27,8 +27,8 @@ clients:
 
 aws:
   cognito:
-    region: us-east-1
-    user-pool-id: us-east-1_DEVPOOLID
+    region: ${AWS_REGION:us-east-1}
+    user-pool-id: ${COGNITO_USER_POOL_ID:us-east-1_DEVPOOLID}
 
 logging:
   level:
