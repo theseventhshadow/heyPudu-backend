@@ -1,0 +1,29 @@
+# ============================================================
+# MediaMTX (SFU WebRTC) para desarrollo local
+#
+#   docker compose -f docker-compose.mediamtx.yml up -d
+#
+# - WHIP/WHEP: http://localhost:8889
+# - API de control: http://localhost:9997 (solo local)
+#
+# El contenedor llega a ms-live (que corre en el host) mediante
+# host.docker.internal. En la EC2 esto se sustituye por la IP privada.
+# ============================================================
+
+name: heypudu-mediamtx
+
+services:
+  mediamtx:
+    build:
+      context: ./mediamtx
+    image: heypudu-mediamtx:local
+    container_name: heypudu-mediamtx
+    restart: unless-stopped
+    ports:
+      - "8889:8889/tcp"
+      - "8189:8189/udp"
+      - "9997:9997/tcp"
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

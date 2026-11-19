@@ -1,0 +1,47 @@
+# ============================================================
+# MediaMTX para desarrollo local de heyPudú!
+#
+# - WHIP (publicar):  http://localhost:8889/<roomId>/whip
+# - WHEP (escuchar):  http://localhost:8889/<roomId>/whep
+# - Autorización:     ms-live en el host (host.docker.internal:8086)
+#
+# En la EC2 de MediaMTX cambiar authHTTPAddress y los hooks por la
+# IP/DNS privada de ms-live y habilitar HTTPS/WSS.
+# ============================================================
+
+logLevel: info
+logDestinations: [stdout]
+
+api: yes
+apiAddress: :9997
+
+authMethod: http
+authHTTPAddress: http://host.docker.internal:8086/api/v1/internal/mediamtx/auth?serviceToken=dev-mediamtx-token
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+# Solo WebRTC en la demo.
+rtsp: no
+rtmp: no
+srt: no
+hls: no
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcAllowOrigins: ['http://localhost:5173', 'https://heypudu.vercel.app']
+webrtcLocalUDPAddress: :8189
+webrtcAdditionalHosts: [localhost]
+
+paths:
+  all_others:
+
+pathDefaults:
+  # El oyente debe añadir ?user=<cognitoSub> a la URL WHEP para que el hook
+  # pueda identificar quién entra o sale de la sala.
+  runOnRead: |
+    /bin/sh -c 'curl -s -o /dev/null -X POST -H "Content-Type: application/json" -H "X-Mediamtx-Token: dev-mediamtx-token" --data "{\"path\":\"$MTX_PATH\",\"action\":\"JOINED\",\"query\":\"$MTX_QUERY\"}" http://host.docker.internal:8086/api/v1/internal/mediamtx/hooks'
+  runOnUnread: |
+    /bin/sh -c 'curl -s -o /dev/null -X POST -H "Content-Type: application/json" -H "X-Mediamtx-Token: dev-mediamtx-token" --data "{\"path\":\"$MTX_PATH\",\"action\":\"LEFT\",\"query\":\"$MTX_QUERY\"}" http://host.docker.internal:8086/api/v1/internal/mediamtx/hooks'

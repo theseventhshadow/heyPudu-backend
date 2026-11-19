@@ -258,6 +258,10 @@ heypudu-backend/
 ├── docker-compose.kafka.yml            # Kafka KRaft + Kafka UI + init del tópico
 ├── kafka/
 │   └── init-topics.sh                  # Declaración idempotente del tópico
+├── docker-compose.mediamtx.yml         # SFU WebRTC local (WHIP/WHEP)
+├── mediamtx/
+│   ├── Dockerfile                      # MediaMTX + curl para los hooks
+│   └── mediamtx.yml                    # Auth HTTP, CORS y hooks
 ├── rabbit/
 │   ├── cluster-init.sh                 # Unión idempotente de rabbit2 al clúster
 │   └── conf/10-heypudu.conf            # Colas quorum por defecto
@@ -920,6 +924,23 @@ Verificar el tópico:
 docker exec heypudu-kafka /opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server localhost:9092 --describe --topic heypudu.live.events
 ```
+
+### Levantar MediaMTX
+
+SFU WebRTC local para las salas de audio (WHIP para publicar, WHEP para
+escuchar). La imagen se construye sobre Alpine para incluir `curl` y poder
+ejecutar los hooks.
+
+```bash
+docker compose -f docker-compose.mediamtx.yml up -d --build
+```
+
+- WHIP/WHEP: `http://localhost:8889/<roomId>/whip` y
+  `http://localhost:8889/<roomId>/whep?user=<cognitoSub>`
+- API de control: `http://localhost:9997`
+- La autorización la resuelve `ms-live` en
+  `/api/v1/internal/mediamtx/auth` con `MEDIAMTX_SERVICE_TOKEN`.
+- En local el contenedor llega a `ms-live` por `host.docker.internal:8086`.
 
 ### Levantar PostgreSQL
 

@@ -37,6 +37,8 @@ Gestiona el ciclo de vida de las salas activas:
 | `GET` | `/api/v1/live/rooms/{id}` | Obtener detalle |
 | `GET` | `/api/v1/live/rooms/{id}/access` | Consultar acceso |
 | `POST` | `/api/v1/live/rooms/{id}/reactions` | Enviar reacción (`CLAP`/`HEART`) → 202 |
+| `POST` | `/api/v1/internal/mediamtx/auth` | Autorización `publish`/`read` para MediaMTX |
+| `POST` | `/api/v1/internal/mediamtx/hooks` | Hook `JOINED`/`LEFT` → evento Kafka |
 
 Las operaciones públicas requieren JWT de Cognito. Las reacciones se persisten en
 `heypudu_live.live_reactions` y se publican en el tópico `heypudu.live.events`.
@@ -48,6 +50,19 @@ Las operaciones públicas requieren JWT de Cognito. Las reacciones se persisten 
 - Publica `room.closed` en `ex.heypudu.cmd` al cerrar la sala.
 - Consume `q.heypudu.live.command` (con DLQ `q.heypudu.live.command.dlq`) para
   borrar las reacciones persistidas de la sala (decisión D1).
+
+## MediaMTX
+
+- Levantar el SFU local: `docker compose -f docker-compose.mediamtx.yml up -d`.
+- `authMethod: http` delega en `/api/v1/internal/mediamtx/auth`, protegido con
+  `MEDIAMTX_SERVICE_TOKEN`.
+- Identidad D3: `user = cognitoSub` y `password`/`token` = JWT de Cognito; el
+  `sub` del token debe coincidir con `user`.
+- `publish` solo lo permite el creador; `read` al creador o a un seguidor.
+- Publicar: `/<roomId>/whip`. Escuchar: `/<roomId>/whep?user=<cognitoSub>`
+  (el query permite identificar al oyente en los hooks).
+- Los hooks `runOnRead`/`runOnUnread` publican `LISTENER_JOINED`/`LISTENER_LEFT`
+  en Kafka.
 
 ## Configuración
 
