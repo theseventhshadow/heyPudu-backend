@@ -16,6 +16,13 @@ public class UserClient {
         this.usersRestClient = usersRestClient;
     }
 
+    public UserSummaryDto getSummaryByCognitoSub(UUID cognitoSub) {
+        return usersRestClient.get()
+                .uri("/api/v1/internal/users/by-cognito/{cognitoSub}/summary", cognitoSub)
+                .retrieve()
+                .body(UserSummaryDto.class);
+    }
+
     public boolean isFollowing(UUID creatorSub, UUID listenerSub, String bearerToken) {
         try {
             Boolean response = usersRestClient.get()
