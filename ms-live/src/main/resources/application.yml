@@ -53,6 +53,12 @@ spring:
         default-requeue-rejected: false
         prefetch: ${RABBITMQ_PREFETCH:10}
 
+rabbit:
+  topology:
+    message-ttl-ms: ${RABBITMQ_MESSAGE_TTL_MS:3600000}
+    max-length: ${RABBITMQ_MAX_LENGTH:10000}
+    delivery-limit: ${RABBITMQ_DELIVERY_LIMIT:3}
+
 clients:
   users:
     base-url: ${CLIENTS_USERS_BASE_URL:http://localhost:8082}

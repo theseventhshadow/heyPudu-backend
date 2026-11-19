@@ -9,5 +9,5 @@ public interface LiveReactionRepository extends JpaRepository<LiveReaction, UUID
 
     long countByRoomId(UUID roomId);
 
-    void deleteByRoomId(UUID roomId);
+    long deleteByRoomId(UUID roomId);
 }

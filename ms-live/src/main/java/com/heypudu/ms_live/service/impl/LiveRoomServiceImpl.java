@@ -8,6 +8,7 @@ import com.heypudu.ms_live.exception.BusinessException;
 import com.heypudu.ms_live.exception.ResourceNotFoundException;
 import com.heypudu.ms_live.messaging.LiveEventPublisher;
 import com.heypudu.ms_live.messaging.ReactionType;
+import com.heypudu.ms_live.messaging.RoomEventPublisher;
 import com.heypudu.ms_live.model.LiveReaction;
 import com.heypudu.ms_live.model.LiveRoom;
 import com.heypudu.ms_live.model.LiveRoomStatus;
@@ -32,6 +33,7 @@ public class LiveRoomServiceImpl implements LiveRoomService {
     private final CognitoUserExtractor cognitoUserExtractor;
     private final UserClient userClient;
     private final LiveEventPublisher eventPublisher;
+    private final RoomEventPublisher roomEventPublisher;
     private final String mediamtxPublicUrl;
 
     public LiveRoomServiceImpl(
@@ -40,12 +42,14 @@ public class LiveRoomServiceImpl implements LiveRoomService {
             CognitoUserExtractor cognitoUserExtractor,
             UserClient userClient,
             LiveEventPublisher eventPublisher,
+            RoomEventPublisher roomEventPublisher,
             @Value("${mediamtx.public-url:http://localhost:8889}") String mediamtxPublicUrl) {
         this.repository = repository;
         this.reactionRepository = reactionRepository;
         this.cognitoUserExtractor = cognitoUserExtractor;
         this.userClient = userClient;
         this.eventPublisher = eventPublisher;
+        this.roomEventPublisher = roomEventPublisher;
         this.mediamtxPublicUrl = mediamtxPublicUrl.replaceAll("/+$", "");
     }
 
@@ -62,6 +66,7 @@ public class LiveRoomServiceImpl implements LiveRoomService {
         LiveRoom room = new LiveRoom(creatorSub, creatorSub, request.title(), request.description());
         LiveRoom saved = repository.save(room);
         eventPublisher.roomCreated(saved);
+        roomEventPublisher.publishRoomCreated(saved);
         return toResponse(saved);
     }
 
@@ -75,7 +80,11 @@ public class LiveRoomServiceImpl implements LiveRoomService {
             throw new org.springframework.security.access.AccessDeniedException(
                     "Solo el creador puede cerrar la sala");
         }
-
+boolean wasLive = room.getStatus() == LiveRoomStatus.LIVE;
+        room.close();
+        if (wasLive) {
+            roomEventPublisher.publishRoomClosed(room);
+        }
         room.close();
     }
 
@@ -112,7 +121,8 @@ public class LiveRoomServiceImpl implements LiveRoomService {
                 "Bearer " + jwt.getTokenValue());
         return new LiveRoomAccessResponse(following);
     }
-@Override
+
+    @Override
     @Transactional
     public void sendReaction(UUID roomId, ReactionType type, Jwt jwt) {
         LiveRoom room = findRoom(roomId);
@@ -133,7 +143,12 @@ public class LiveRoomServiceImpl implements LiveRoomService {
         eventPublisher.reaction(room, actorSub, type);
     }
 
-    
+    @Override
+    @Transactional
+    public void handleRoomClosed(UUID roomId) {
+        reactionRepository.deleteByRoomId(roomId);
+    }
+
     private LiveRoom findRoom(UUID roomId) {
         return repository.findById(roomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Sala no encontrada"));

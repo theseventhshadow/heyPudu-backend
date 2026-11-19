@@ -41,6 +41,14 @@ Gestiona el ciclo de vida de las salas activas:
 Las operaciones públicas requieren JWT de Cognito. Las reacciones se persisten en
 `heypudu_live.live_reactions` y se publican en el tópico `heypudu.live.events`.
 
+## RabbitMQ
+
+- Publica `room.created` en `ex.heypudu.events` al abrir una sala; lo consume
+  `ms-users` para notificar a los seguidores.
+- Publica `room.closed` en `ex.heypudu.cmd` al cerrar la sala.
+- Consume `q.heypudu.live.command` (con DLQ `q.heypudu.live.command.dlq`) para
+  borrar las reacciones persistidas de la sala (decisión D1).
+
 ## Configuración
 
 | Variable | Descripción |
@@ -53,6 +61,8 @@ Las operaciones públicas requieren JWT de Cognito. Las reacciones se persisten 
 | `CLIENTS_USERS_BASE_URL` | URL de `ms-users` |
 | `KAFKA_BOOTSTRAP_SERVERS` | Brokers Kafka |
 | `KAFKA_TOPIC_LIVE_EVENTS` | Tópico de eventos (por defecto `heypudu.live.events`) |
+| `RABBITMQ_HOST` / `RABBITMQ_PORT` | Conexión AMQP |
+| `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` | Credenciales AMQP |
 | `MEDIAMTX_PUBLIC_URL` | URL pública de MediaMTX |
 | `MEDIAMTX_SERVICE_TOKEN` | Token compartido futuro con MediaMTX |
 | `LIVE_ROOM_MAX_DURATION_MINUTES` | Duración máxima configurada |

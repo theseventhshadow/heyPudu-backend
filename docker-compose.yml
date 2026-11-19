@@ -113,6 +113,14 @@ services:
       # Dentro de la red de contenedores el broker responde en kafka:9092.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC_LIVE_EVENTS: heypudu.live.events
+      # RabbitMQ corre en el compose aparte (docker-compose.rabbit.yml),
+      # así que desde el contenedor se llega por el host.
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-host.docker.internal}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-heypudu}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-devpassword}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy

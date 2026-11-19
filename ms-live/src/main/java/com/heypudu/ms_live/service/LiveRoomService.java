@@ -16,4 +16,5 @@ public interface LiveRoomService {
     LiveRoomResponse getRoom(UUID roomId);
     LiveRoomAccessResponse checkAccess(UUID roomId, Jwt jwt);
     void sendReaction(UUID roomId, ReactionType type, Jwt jwt);
+    void handleRoomClosed(UUID roomId);
 }

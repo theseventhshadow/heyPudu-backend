@@ -134,11 +134,12 @@ un túnel SSH.
 | Exchange | Tipo | Cola | Routing key o patrón |
 |---|---|---|---|
 | `ex.heypudu.cmd` | `direct` | `q.heypudu.command` | `post.delete` |
-| `ex.heypudu.events` | `topic` | `q.heypudu.notification` | `interaction.liked`, `interaction.commented`, `user.followed` |
+| `ex.heypudu.cmd` | `direct` | `q.heypudu.live.command` | `room.closed` |
+| `ex.heypudu.events` | `topic` | `q.heypudu.notification` | `interaction.liked`, `interaction.commented`, `user.followed`, `room.created` |
 | `ex.heypudu.events` | `topic` | `q.heypudu.audit` | `interaction.*`, `user.#` |
-| `ex.heypudu.dlx` | `direct` | Tres DLQ | Routing key específica de cada DLQ |
+| `ex.heypudu.dlx` | `direct` | Cuatro DLQ | Routing key específica de cada DLQ |
 
-Las tres colas funcionales y sus DLQ son colas quorum durables. Utilizan TTL
+Las cuatro colas funcionales y sus DLQ son colas quorum durables. Utilizan TTL
 predeterminado de una hora, longitud máxima de `10000`, overflow
 `rejectPublish`, límite de entregas `3` y dead-letter exchange
 `ex.heypudu.dlx`.
@@ -149,10 +150,12 @@ predeterminado de una hora, longitud máxima de `10000`, overflow
   comentarios y confirma con ACK.
 - `ms-interactions` publica eventos de likes y comentarios.
 - `ms-users` publica eventos de seguimiento y consume notificaciones.
+- `ms-live` publica `room.created` y `room.closed`; `ms-users` notifica a los
+  seguidores y `ms-live` limpia las reacciones de la sala cerrada.
 - `ms-posts` consume eventos de auditoría.
 - Los consumidores usan ACK manual y NACK sin requeue ante errores no
   recuperables.
-- `DeadLetterListener` registra mensajes de las tres DLQ.
+- Los listeners de DLQ registran los mensajes rechazados de las cuatro colas.
 
 La topología está centralizada en clases `RabbitTopology` y
 `RabbitTopologyConfig`. La configuración de escucha y el conversor de mensajes

@@ -12,4 +12,5 @@ public final class RabbitTopology {
     public static final String RK_INTERACTION_LIKE = "interaction.liked";
     public static final String RK_INTERACTION_COMMENT = "interaction.commented";
     public static final String RK_USER_FOLLOWED = "user.followed";
+    public static final String RK_ROOM_CREATED = "room.created";
 }
