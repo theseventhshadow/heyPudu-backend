@@ -16,9 +16,10 @@ public class UserClient {
         this.usersRestClient = usersRestClient;
     }
 
-    public UserSummaryDto getSummaryByCognitoSub(UUID cognitoSub) {
+    public UserSummaryDto getSummaryByCognitoSub(UUID cognitoSub, String bearerToken) {
         return usersRestClient.get()
                 .uri("/api/v1/internal/users/by-cognito/{cognitoSub}/summary", cognitoSub)
+                .header("Authorization", bearerToken)
                 .retrieve()
                 .body(UserSummaryDto.class);
     }

@@ -47,13 +47,15 @@ public class LiveRoomController {
     }
 
     @GetMapping
-    public ResponseEntity<List<LiveRoomResponse>> listActiveRooms() {
-        return ResponseEntity.ok(liveRoomService.listActiveRooms());
+    public ResponseEntity<List<LiveRoomResponse>> listActiveRooms(@AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(liveRoomService.listActiveRooms(jwt));
     }
 
     @GetMapping("/{roomId}")
-    public ResponseEntity<LiveRoomResponse> getRoom(@PathVariable UUID roomId) {
-        return ResponseEntity.ok(liveRoomService.getRoom(roomId));
+    public ResponseEntity<LiveRoomResponse> getRoom(
+            @PathVariable UUID roomId,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(liveRoomService.getRoom(roomId, jwt));
     }
 
     @GetMapping("/{roomId}/access")

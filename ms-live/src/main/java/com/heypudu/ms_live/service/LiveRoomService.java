@@ -12,8 +12,8 @@ import java.util.UUID;
 public interface LiveRoomService {
     LiveRoomResponse createRoom(CreateLiveRoomRequest request, Jwt jwt);
     void closeRoom(UUID roomId, Jwt jwt);
-    List<LiveRoomResponse> listActiveRooms();
-    LiveRoomResponse getRoom(UUID roomId);
+    List<LiveRoomResponse> listActiveRooms(Jwt jwt);
+    LiveRoomResponse getRoom(UUID roomId, Jwt jwt);
     LiveRoomAccessResponse checkAccess(UUID roomId, Jwt jwt);
     void sendReaction(UUID roomId, ReactionType type, Jwt jwt);
     void handleRoomClosed(UUID roomId);

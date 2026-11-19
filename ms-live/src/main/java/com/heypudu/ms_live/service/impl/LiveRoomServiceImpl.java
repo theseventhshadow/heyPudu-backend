@@ -72,7 +72,7 @@ public class LiveRoomServiceImpl implements LiveRoomService {
         LiveRoom saved = repository.save(room);
         eventPublisher.roomCreated(saved);
         roomEventPublisher.publishRoomCreated(saved);
-        return toResponse(saved);
+        return toResponse(saved, jwt);
     }
 
     @Override
@@ -85,26 +85,25 @@ public class LiveRoomServiceImpl implements LiveRoomService {
             throw new org.springframework.security.access.AccessDeniedException(
                     "Solo el creador puede cerrar la sala");
         }
-boolean wasLive = room.getStatus() == LiveRoomStatus.LIVE;
+        boolean wasLive = room.getStatus() == LiveRoomStatus.LIVE;
         room.close();
         if (wasLive) {
             roomEventPublisher.publishRoomClosed(room);
         }
-        room.close();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<LiveRoomResponse> listActiveRooms() {
+    public List<LiveRoomResponse> listActiveRooms(Jwt jwt) {
         return repository.findByStatusOrderByStartedAtDesc(LiveRoomStatus.LIVE).stream()
-                .map(this::toResponse)
+                .map(room -> toResponse(room, jwt))
                 .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public LiveRoomResponse getRoom(UUID roomId) {
-        return toResponse(findRoom(roomId));
+    public LiveRoomResponse getRoom(UUID roomId, Jwt jwt) {
+        return toResponse(findRoom(roomId), jwt);
     }
 
     @Override
@@ -158,8 +157,8 @@ boolean wasLive = room.getStatus() == LiveRoomStatus.LIVE;
         return repository.findById(roomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Sala no encontrada"));
     }
-    private LiveRoomResponse toResponse(LiveRoom room) {
-        UserSummaryDto creator = fetchCreator(room.getCreatorCognitoSub());
+    private LiveRoomResponse toResponse(LiveRoom room, Jwt jwt) {
+        UserSummaryDto creator = fetchCreator(room.getCreatorCognitoSub(), jwt);
         return new LiveRoomResponse(
                 room.getId(),
                 room.getTitle(),
@@ -175,11 +174,11 @@ boolean wasLive = room.getStatus() == LiveRoomStatus.LIVE;
                 room.getEndedAt());
     }
 
-    private UserSummaryDto fetchCreator(UUID cognitoSub) {
+    private UserSummaryDto fetchCreator(UUID cognitoSub, Jwt jwt) {
         try {
-            return userClient.getSummaryByCognitoSub(cognitoSub);
+            return userClient.getSummaryByCognitoSub(cognitoSub, "Bearer " + jwt.getTokenValue());
         } catch (RuntimeException ex) {
-            log.warn("No se pudo resolver el creador {} en ms-users", cognitoSub);
+            log.warn("No se pudo resolver el creador {} en ms-users: {}", cognitoSub, ex.getMessage());
             return null;
         }
     }
