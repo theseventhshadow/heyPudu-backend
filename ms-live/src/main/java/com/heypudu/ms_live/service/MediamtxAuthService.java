@@ -142,15 +142,8 @@ public class MediamtxAuthService {
 
     private AuthenticatedIdentity authenticate(MediamtxAuthRequest request) {
         String token = firstNonBlank(request.token(), looksLikeJwt(request.password()) ? request.password() : null);
-        if (request.user() == null || request.user().isBlank() || token == null) {
+        if (token == null) {
             throw new BadCredentialsException("Credenciales incompletas");
-        }
-
-        UUID claimedSub;
-        try {
-            claimedSub = UUID.fromString(request.user());
-        } catch (IllegalArgumentException ex) {
-            throw new BadCredentialsException("Usuario invalido");
         }
 
         Jwt jwt;
@@ -166,8 +159,19 @@ public class MediamtxAuthService {
         } catch (RuntimeException ex) {
             throw new BadCredentialsException("El token no contiene un sub valido");
         }
-        if (!tokenSub.equals(claimedSub)) {
-            throw new BadCredentialsException("El usuario no coincide con el token");
+
+        // Si MediaMTX envía user (Basic user/password), debe coincidir con el sub.
+        // Con Authorization: Bearer el usuario se deduce del propio token.
+        if (request.user() != null && !request.user().isBlank()) {
+            UUID claimedSub;
+            try {
+                claimedSub = UUID.fromString(request.user());
+            } catch (IllegalArgumentException ex) {
+                throw new BadCredentialsException("Usuario invalido");
+            }
+            if (!tokenSub.equals(claimedSub)) {
+                throw new BadCredentialsException("El usuario no coincide con el token");
+            }
         }
         return new AuthenticatedIdentity(tokenSub, token);
     }
