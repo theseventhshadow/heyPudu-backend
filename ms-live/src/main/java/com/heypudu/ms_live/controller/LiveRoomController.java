@@ -1,6 +1,7 @@
 package com.heypudu.ms_live.controller;
 
 import com.heypudu.ms_live.dto.request.CreateLiveRoomRequest;
+import com.heypudu.ms_live.dto.request.SendReactionRequest;
 import com.heypudu.ms_live.dto.response.LiveRoomAccessResponse;
 import com.heypudu.ms_live.dto.response.LiveRoomResponse;
 import com.heypudu.ms_live.service.LiveRoomService;
@@ -60,5 +61,14 @@ public class LiveRoomController {
             @PathVariable UUID roomId,
             @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(liveRoomService.checkAccess(roomId, jwt));
+    }
+
+    @PostMapping("/{roomId}/reactions")
+    public ResponseEntity<Void> sendReaction(
+            @PathVariable UUID roomId,
+            @Valid @RequestBody SendReactionRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        liveRoomService.sendReaction(roomId, request.type(), jwt);
+        return ResponseEntity.accepted().build();
     }
 }

@@ -64,6 +64,8 @@ mediamtx:
 live:
   room:
     max-duration-minutes: ${LIVE_ROOM_MAX_DURATION_MINUTES:120}
+  events:
+    topic: ${KAFKA_TOPIC_LIVE_EVENTS:heypudu.live.events}
 
 management:
   endpoints:

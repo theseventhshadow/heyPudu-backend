@@ -11,6 +11,7 @@ Gestiona el ciclo de vida de las salas activas:
 - Consultar salas activas y el detalle de una sala.
 - Cerrar una sala solo por su creador.
 - Consultar si un oyente puede escuchar una sala.
+- Registrar reacciones de oyentes y publicarlas en Kafka.
 - Construir las URLs WHIP/WHEP desde la URL pública de MediaMTX.
 
 ## Tecnologías
@@ -35,8 +36,10 @@ Gestiona el ciclo de vida de las salas activas:
 | `GET` | `/api/v1/live/rooms` | Listar salas activas |
 | `GET` | `/api/v1/live/rooms/{id}` | Obtener detalle |
 | `GET` | `/api/v1/live/rooms/{id}/access` | Consultar acceso |
+| `POST` | `/api/v1/live/rooms/{id}/reactions` | Enviar reacción (`CLAP`/`HEART`) → 202 |
 
-Las operaciones públicas requieren JWT de Cognito.
+Las operaciones públicas requieren JWT de Cognito. Las reacciones se persisten en
+`heypudu_live.live_reactions` y se publican en el tópico `heypudu.live.events`.
 
 ## Configuración
 
@@ -49,6 +52,7 @@ Las operaciones públicas requieren JWT de Cognito.
 | `COGNITO_JWK_SET_URI` | URL JWKS |
 | `CLIENTS_USERS_BASE_URL` | URL de `ms-users` |
 | `KAFKA_BOOTSTRAP_SERVERS` | Brokers Kafka |
+| `KAFKA_TOPIC_LIVE_EVENTS` | Tópico de eventos (por defecto `heypudu.live.events`) |
 | `MEDIAMTX_PUBLIC_URL` | URL pública de MediaMTX |
 | `MEDIAMTX_SERVICE_TOKEN` | Token compartido futuro con MediaMTX |
 | `LIVE_ROOM_MAX_DURATION_MINUTES` | Duración máxima configurada |

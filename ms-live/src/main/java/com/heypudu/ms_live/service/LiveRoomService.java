@@ -3,6 +3,7 @@ package com.heypudu.ms_live.service;
 import com.heypudu.ms_live.dto.request.CreateLiveRoomRequest;
 import com.heypudu.ms_live.dto.response.LiveRoomAccessResponse;
 import com.heypudu.ms_live.dto.response.LiveRoomResponse;
+import com.heypudu.ms_live.messaging.ReactionType;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.util.List;
@@ -14,4 +15,5 @@ public interface LiveRoomService {
     List<LiveRoomResponse> listActiveRooms();
     LiveRoomResponse getRoom(UUID roomId);
     LiveRoomAccessResponse checkAccess(UUID roomId, Jwt jwt);
+    void sendReaction(UUID roomId, ReactionType type, Jwt jwt);
 }
