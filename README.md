@@ -108,6 +108,7 @@ Los usuarios se autentican con **AWS Cognito**. Los administradores pueden banea
 | `ms-posts` | 8083 | `heypudu_posts` | Publicaciones (texto/audio), feed, búsqueda de posts, URLs prefirmadas S3. |
 | `ms-interactions` | 8084 | `heypudu_interactions` | Likes, comentarios, reportes y mensajería de comandos/eventos. |
 | `ms-heypudu-rabbit-admin` | 8085 | — | Administración REST de exchanges, colas y bindings RabbitMQ. |
+| `ms-live` | 8086 | `heypudu_live` | Salas de audio en vivo, acceso por seguimiento, reacciones y eventos Kafka. |
 
 Cada microservicio es un **proyecto Spring Boot independiente** con su propio `build.gradle`, su propia clase `@SpringBootApplication`, su propio `Dockerfile` y su propia configuración.
 
