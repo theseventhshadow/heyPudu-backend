@@ -15,6 +15,7 @@ CREATE SCHEMA IF NOT EXISTS heypudu_users;
 CREATE SCHEMA IF NOT EXISTS heypudu_posts;
 CREATE SCHEMA IF NOT EXISTS heypudu_interactions;
 CREATE SCHEMA IF NOT EXISTS heypudu_live;
+CREATE SCHEMA IF NOT EXISTS heypudu_analytics;
 
 -- ============================================================
 -- Usuarios por microservicio
@@ -24,6 +25,7 @@ CREATE USER heypudu_users_user WITH PASSWORD 'devpassword';
 CREATE USER heypudu_posts_user WITH PASSWORD 'devpassword';
 CREATE USER heypudu_interactions_user WITH PASSWORD 'devpassword';
 CREATE USER heypudu_live_user WITH PASSWORD 'devpassword';
+CREATE USER heypudu_analytics_user WITH PASSWORD 'devpassword';
 
 -- ============================================================
 -- Permisos sobre cada esquema
@@ -73,3 +75,12 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA heypudu_live
     GRANT ALL PRIVILEGES ON TABLES TO heypudu_live_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA heypudu_live
     GRANT ALL PRIVILEGES ON SEQUENCES TO heypudu_live_user;
+
+-- ms-analytics
+GRANT ALL PRIVILEGES ON SCHEMA heypudu_analytics TO heypudu_analytics_user;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA heypudu_analytics TO heypudu_analytics_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA heypudu_analytics TO heypudu_analytics_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA heypudu_analytics
+    GRANT ALL PRIVILEGES ON TABLES TO heypudu_analytics_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA heypudu_analytics
+    GRANT ALL PRIVILEGES ON SEQUENCES TO heypudu_analytics_user;
