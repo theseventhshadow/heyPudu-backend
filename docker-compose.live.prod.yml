@@ -81,7 +81,9 @@ services:
       MEDIAMTX_SERVICE_TOKEN: ${MEDIAMTX_SERVICE_TOKEN}
       MEDIAMTX_ALLOWED_ORIGIN: ${MEDIAMTX_ALLOWED_ORIGIN:-https://heypudu.vercel.app}
     volumes:
-      - ./mediamtx/mediamtx.prod.yml:/mediamtx.yml:ro
+      # Se monta como plantilla: el entrypoint de la imagen aplica envsubst
+      # y escribe /mediamtx.yml antes de arrancar.
+      - ./mediamtx/mediamtx.prod.yml:/mediamtx.yml.template:ro
     expose:
       - "8889"
     ports:

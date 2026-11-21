@@ -5,13 +5,18 @@
 # ============================================================
 FROM alpine:3.20
 
-RUN apk add --no-cache curl ca-certificates
+# gettext aporta envsubst: MediaMTX no expande ${VAR} en su YAML, así que el
+# entrypoint genera /mediamtx.yml a partir de la plantilla montada.
+RUN apk add --no-cache curl ca-certificates gettext
 
 COPY --from=bluenviron/mediamtx:1.21.4 /mediamtx /usr/local/bin/mediamtx
 COPY mediamtx.yml /mediamtx.yml
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8889/tcp
 EXPOSE 8189/udp
 EXPOSE 9997/tcp
 
-ENTRYPOINT ["/usr/local/bin/mediamtx"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["/usr/local/bin/mediamtx"]

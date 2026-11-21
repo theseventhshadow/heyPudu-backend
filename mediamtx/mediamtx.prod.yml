@@ -5,7 +5,9 @@
 # - Autorización y hooks: ms-live por la red Docker (ms-live:8086)
 # - Medios WebRTC: 8189/UDP directo al navegador
 #
-# Las variables ${...} las sustituye MediaMTX al arrancar.
+# Las variables ${MEDIAMTX_*} las sustituye el entrypoint de la imagen
+# (envsubst) antes de arrancar MediaMTX: se monta como plantilla en
+# /mediamtx.yml.template. Las ${MTX_*} de los hooks no se tocan.
 # ============================================================
 
 logLevel: info
