@@ -1,0 +1,48 @@
+# ============================================================
+# MediaMTX para la EC2 3 (fase 8)
+#
+# - WHIP/WHEP:  https://${MEDIAMTX_HOST}/<roomId>/whip|whep  (TLS en Caddy)
+# - Autorización y hooks: ms-live por la red Docker (ms-live:8086)
+# - Medios WebRTC: 8189/UDP directo al navegador
+#
+# Las variables ${MEDIAMTX_*} las sustituye el entrypoint de la imagen
+# (envsubst) antes de arrancar MediaMTX: se monta como plantilla en
+# /mediamtx.yml.template. Las ${MTX_*} de los hooks no se tocan.
+# ============================================================
+
+logLevel: info
+logDestinations: [stdout]
+
+api: yes
+apiAddress: :9997
+
+authMethod: http
+authHTTPAddress: http://ms-live:8086/api/v1/internal/mediamtx/auth?serviceToken=${MEDIAMTX_SERVICE_TOKEN}
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+# Solo WebRTC en la demo.
+rtsp: no
+rtmp: no
+srt: no
+hls: no
+
+webrtc: yes
+webrtcAddress: :8889
+# TLS lo termina Caddy; entre Caddy y MediaMTX va HTTP.
+webrtcEncryption: no
+webrtcAllowOrigins: ['${MEDIAMTX_ALLOWED_ORIGIN}']
+webrtcLocalUDPAddress: :8189
+# EC2 usa NAT 1:1: hay que anunciar el host público en los candidatos ICE.
+webrtcAdditionalHosts: [${MEDIAMTX_HOST}]
+
+paths:
+  all_others:
+
+pathDefaults:
+  runOnRead: |
+    /bin/sh -c 'curl -s -o /dev/null -X POST -H "Content-Type: application/json" -H "X-Mediamtx-Token: ${MEDIAMTX_SERVICE_TOKEN}" --data "{\"path\":\"$MTX_PATH\",\"action\":\"JOINED\",\"query\":\"$MTX_QUERY\"}" http://ms-live:8086/api/v1/internal/mediamtx/hooks'
+  runOnUnread: |
+    /bin/sh -c 'curl -s -o /dev/null -X POST -H "Content-Type: application/json" -H "X-Mediamtx-Token: ${MEDIAMTX_SERVICE_TOKEN}" --data "{\"path\":\"$MTX_PATH\",\"action\":\"LEFT\",\"query\":\"$MTX_QUERY\"}" http://ms-live:8086/api/v1/internal/mediamtx/hooks'

@@ -108,6 +108,8 @@ Los usuarios se autentican con **AWS Cognito**. Los administradores pueden banea
 | `ms-posts` | 8083 | `heypudu_posts` | Publicaciones (texto/audio), feed, búsqueda de posts, URLs prefirmadas S3. |
 | `ms-interactions` | 8084 | `heypudu_interactions` | Likes, comentarios, reportes y mensajería de comandos/eventos. |
 | `ms-heypudu-rabbit-admin` | 8085 | — | Administración REST de exchanges, colas y bindings RabbitMQ. |
+| `ms-live` | 8086 | `heypudu_live` | Salas de audio en vivo, acceso por seguimiento, reacciones y eventos Kafka. |
+| `ms-analytics` | 8087 | — (métricas en memoria) | Métricas en tiempo real desde Kafka: oyentes activos y reacciones. |
 
 Cada microservicio es un **proyecto Spring Boot independiente** con su propio `build.gradle`, su propia clase `@SpringBootApplication`, su propio `Dockerfile` y su propia configuración.
 
@@ -133,11 +135,12 @@ un túnel SSH.
 | Exchange | Tipo | Cola | Routing key o patrón |
 |---|---|---|---|
 | `ex.heypudu.cmd` | `direct` | `q.heypudu.command` | `post.delete` |
-| `ex.heypudu.events` | `topic` | `q.heypudu.notification` | `interaction.liked`, `interaction.commented`, `user.followed` |
+| `ex.heypudu.cmd` | `direct` | `q.heypudu.live.command` | `room.closed` |
+| `ex.heypudu.events` | `topic` | `q.heypudu.notification` | `interaction.liked`, `interaction.commented`, `user.followed`, `room.created` |
 | `ex.heypudu.events` | `topic` | `q.heypudu.audit` | `interaction.*`, `user.#` |
-| `ex.heypudu.dlx` | `direct` | Tres DLQ | Routing key específica de cada DLQ |
+| `ex.heypudu.dlx` | `direct` | Cuatro DLQ | Routing key específica de cada DLQ |
 
-Las tres colas funcionales y sus DLQ son colas quorum durables. Utilizan TTL
+Las cuatro colas funcionales y sus DLQ son colas quorum durables. Utilizan TTL
 predeterminado de una hora, longitud máxima de `10000`, overflow
 `rejectPublish`, límite de entregas `3` y dead-letter exchange
 `ex.heypudu.dlx`.
@@ -148,10 +151,12 @@ predeterminado de una hora, longitud máxima de `10000`, overflow
   comentarios y confirma con ACK.
 - `ms-interactions` publica eventos de likes y comentarios.
 - `ms-users` publica eventos de seguimiento y consume notificaciones.
+- `ms-live` publica `room.created` y `room.closed`; `ms-users` notifica a los
+  seguidores y `ms-live` limpia las reacciones de la sala cerrada.
 - `ms-posts` consume eventos de auditoría.
 - Los consumidores usan ACK manual y NACK sin requeue ante errores no
   recuperables.
-- `DeadLetterListener` registra mensajes de las tres DLQ.
+- Los listeners de DLQ registran los mensajes rechazados de las cuatro colas.
 
 La topología está centralizada en clases `RabbitTopology` y
 `RabbitTopologyConfig`. La configuración de escucha y el conversor de mensajes
@@ -251,6 +256,13 @@ heypudu-backend/
 │
 ├── docker-compose.prod.yml             # Producción: cinco microservicios
 ├── docker-compose.rabbit.yml           # Clúster RabbitMQ de dos nodos
+├── docker-compose.kafka.yml            # Kafka KRaft + Kafka UI + init del tópico
+├── kafka/
+│   └── init-topics.sh                  # Declaración idempotente del tópico
+├── docker-compose.mediamtx.yml         # SFU WebRTC local (WHIP/WHEP)
+├── mediamtx/
+│   ├── Dockerfile                      # MediaMTX + curl para los hooks
+│   └── mediamtx.yml                    # Auth HTTP, CORS y hooks
 ├── rabbit/
 │   ├── cluster-init.sh                 # Unión idempotente de rabbit2 al clúster
 │   └── conf/10-heypudu.conf            # Colas quorum por defecto
@@ -890,6 +902,46 @@ docker exec heypudu-rabbit1 rabbitmqctl cluster_status
 La Management UI queda disponible en `http://localhost:15672` para `rabbit1`
 y en `http://localhost:15673` para `rabbit2`. Las credenciales se configuran
 mediante `.env`; nunca deben incluirse en este README.
+
+### Levantar Kafka
+
+Kafka corre en modo KRaft (sin Zookeeper), con un único broker y Kafka UI:
+
+```bash
+docker compose -f docker-compose.kafka.yml up -d
+docker compose -f docker-compose.kafka.yml logs -f kafka-init
+```
+
+El contenedor `kafka-init` declara el tópico `heypudu.live.events` (3
+particiones, factor de réplica 1 y retención de 7 días) y termina.
+
+- Kafka UI: `http://localhost:8090`
+- Bootstrap desde el host: `localhost:29092`
+- Bootstrap desde contenedores de Compose: `kafka:9092`
+
+Verificar el tópico:
+
+```bash
+docker exec heypudu-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 --describe --topic heypudu.live.events
+```
+
+### Levantar MediaMTX
+
+SFU WebRTC local para las salas de audio (WHIP para publicar, WHEP para
+escuchar). La imagen se construye sobre Alpine para incluir `curl` y poder
+ejecutar los hooks.
+
+```bash
+docker compose -f docker-compose.mediamtx.yml up -d --build
+```
+
+- WHIP/WHEP: `http://localhost:8889/<roomId>/whip` y
+  `http://localhost:8889/<roomId>/whep?user=<cognitoSub>`
+- API de control: `http://localhost:9997`
+- La autorización la resuelve `ms-live` en
+  `/api/v1/internal/mediamtx/auth` con `MEDIAMTX_SERVICE_TOKEN`.
+- En local el contenedor llega a `ms-live` por `host.docker.internal:8086`.
 
 ### Levantar PostgreSQL
 

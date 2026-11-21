@@ -1,0 +1,88 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: ms-live
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/heypudu?currentSchema=heypudu_live}
+    username: ${DB_USERNAME:heypudu_live_user}
+    password: ${DB_PASSWORD:changeme}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        default_schema: heypudu_live
+    open-in-view: false
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    schemas: heypudu_live
+    default-schema: heypudu_live
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${COGNITO_ISSUER_URI}
+          jwk-set-uri: ${COGNITO_JWK_SET_URI}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:heypudu}
+    password: ${RABBITMQ_PASSWORD:devpassword}
+    listener:
+      simple:
+        acknowledge-mode: manual
+        default-requeue-rejected: false
+        prefetch: ${RABBITMQ_PREFETCH:10}
+
+rabbit:
+  topology:
+    message-ttl-ms: ${RABBITMQ_MESSAGE_TTL_MS:3600000}
+    max-length: ${RABBITMQ_MAX_LENGTH:10000}
+    delivery-limit: ${RABBITMQ_DELIVERY_LIMIT:3}
+
+clients:
+  users:
+    base-url: ${CLIENTS_USERS_BASE_URL:http://localhost:8082}
+
+mediamtx:
+  public-url: ${MEDIAMTX_PUBLIC_URL:http://localhost:8889}
+  service-token: ${MEDIAMTX_SERVICE_TOKEN:change-me}
+
+live:
+  room:
+    max-duration-minutes: ${LIVE_ROOM_MAX_DURATION_MINUTES:120}
+  events:
+    topic: ${KAFKA_TOPIC_LIVE_EVENTS:heypudu.live.events}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    com.heypudu.ms_live: DEBUG

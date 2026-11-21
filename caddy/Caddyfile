@@ -1,0 +1,25 @@
+# ============================================================
+# Caddy para la EC2 3: termina TLS para WHIP/WHEP de MediaMTX.
+#
+# El navegador habla HTTPS contra MEDIAMTX_HOST y Caddy proxea a
+# mediamtx:8889. El audio WebRTC no pasa por aquí: sale por 8189/UDP.
+#
+# Certificado: Let's Encrypt automático (necesita el puerto 80 abierto
+# y que el DNS del dominio apunte a la IP pública de la instancia).
+# ============================================================
+
+{
+	# El email es opcional en Caddy. Si `ACME_EMAIL` no está definido en
+	# live-prod.env, se emite el certificado igualmente (sin avisos de ACME).
+	# Para activarlo, descomentar y poner un correo real:
+	# email {$ACME_EMAIL}
+	# Descomentar solo para pruebas sin dominio real:
+	# local_certs
+}
+
+{$MEDIAMTX_HOST} {
+	encode zstd gzip
+	reverse_proxy mediamtx:8889 {
+		header_up Host {host}
+	}
+}

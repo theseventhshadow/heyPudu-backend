@@ -5,14 +5,20 @@ import com.heypudu.ms_users.dto.response.NotificationResponse;
 import com.heypudu.ms_users.exception.ResourceNotFoundException;
 import com.heypudu.ms_users.messaging.NotificationEvent;
 import com.heypudu.ms_users.model.Notification;
+import com.heypudu.ms_users.model.User;
+import com.heypudu.ms_users.repository.FollowRepository;
 import com.heypudu.ms_users.repository.NotificationRepository;
+import com.heypudu.ms_users.repository.UserRepository;
 import com.heypudu.ms_users.service.NotificationService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -21,16 +27,29 @@ public class NotificationServiceImpl implements NotificationService {
     private static final String TYPE_LIKE = "LIKE";
     private static final String TYPE_COMMENT = "COMMENT";
     private static final String TYPE_FOLLOW = "FOLLOW";
+    private static final String TYPE_ROOM_CREATED = "ROOM_CREATED";
+    private static final String STATUS_ACTIVE = "ACTIVE";
+    private static final int MAX_MESSAGE_LENGTH = 255;
 
     private final NotificationRepository notificationRepository;
+    private final UserRepository userRepository;
+    private final FollowRepository followRepository;
 
-    public NotificationServiceImpl(NotificationRepository notificationRepository) {
+    public NotificationServiceImpl(NotificationRepository notificationRepository,
+                                   UserRepository userRepository,
+                                   FollowRepository followRepository) {
         this.notificationRepository = notificationRepository;
+        this.userRepository = userRepository;
+        this.followRepository = followRepository;
     }
 
     @Override
     @Transactional
     public void createFromEvent(NotificationEvent event, String routingKey) {
+        if (RabbitTopology.RK_ROOM_CREATED.equals(routingKey)) {
+            createRoomCreatedNotifications(event);
+            return;
+        }
         validateEvent(event);
         if (notificationRepository.existsByEventId(event.eventId())) {
             return;
@@ -74,6 +93,57 @@ public class NotificationServiceImpl implements NotificationService {
     @Transactional
     public void markAllAsRead(UUID recipientId) {
         notificationRepository.markAllAsRead(recipientId);
+    }
+
+    /**
+     * Notifica a todos los seguidores del creador. El {@code eventId} de cada
+     * notificación se deriva del evento original y del destinatario para que
+     * sea idempotente sin cambiar la restricción única de {@code event_id}.
+     */
+    private void createRoomCreatedNotifications(NotificationEvent event) {
+        if (event == null || event.eventId() == null || event.roomId() == null
+                || event.actorCognitoSub() == null) {
+            throw new IllegalArgumentException("El evento de sala no tiene identificadores validos");
+        }
+
+        User creator = userRepository.findByCognitoSub(event.actorCognitoSub())
+                .filter(user -> STATUS_ACTIVE.equals(user.getStatus()))
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Creador no encontrado o inactivo: " + event.actorCognitoSub()));
+
+        List<UUID> followerIds = followRepository.findFollowerIdsByFollowedId(creator.getId());
+        if (followerIds.isEmpty()) {
+            return;
+        }
+
+        Instant occurredAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
+        String message = roomMessage(event.roomTitle());
+        List<Notification> notifications = new ArrayList<>();
+        for (UUID followerId : followerIds) {
+            UUID notificationEventId = UUID.nameUUIDFromBytes(
+                    (event.eventId() + ":" + followerId).getBytes(StandardCharsets.UTF_8));
+            if (notificationRepository.existsByEventId(notificationEventId)) {
+                continue;
+            }
+            notifications.add(new Notification(
+                    notificationEventId,
+                    followerId,
+                    creator.getId(),
+                    TYPE_ROOM_CREATED,
+                    null,
+                    null,
+                    message,
+                    occurredAt));
+        }
+        notificationRepository.saveAll(notifications);
+    }
+
+    private String roomMessage(String roomTitle) {
+        String base = "Esta en vivo: "
+                + (roomTitle == null || roomTitle.isBlank() ? "nueva sala" : roomTitle);
+        return base.length() > MAX_MESSAGE_LENGTH
+                ? base.substring(0, MAX_MESSAGE_LENGTH)
+                : base;
     }
 
     private void validateEvent(NotificationEvent event) {

@@ -1,0 +1,8 @@
+# Los scripts que se ejecutan dentro de contenedores Linux deben conservar LF,
+# aunque el repositorio se clone en Windows con core.autocrlf=true.
+*.sh      text eol=lf
+gradlew   text eol=lf
+
+# Los scripts de Windows necesitan CRLF.
+*.bat     text eol=crlf
+*.cmd     text eol=crlf

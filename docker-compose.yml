@@ -94,5 +94,58 @@ services:
       postgres:
         condition: service_healthy
 
+  ms-live:
+    build: ./ms-live
+    container_name: heypudu-ms-live
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_URL: jdbc:postgresql://postgres:5432/heypudu?currentSchema=heypudu_live
+      DB_USERNAME: heypudu_live_user
+      DB_PASSWORD: devpassword
+      CLIENTS_USERS_BASE_URL: http://ms-users:8082
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID/.well-known/jwks.json}
+      MEDIAMTX_PUBLIC_URL: http://localhost:8889
+      MEDIAMTX_SERVICE_TOKEN: dev-mediamtx-token
+      # Kafka se levanta con: docker compose -f docker-compose.kafka.yml up -d
+      # Dentro de la red de contenedores el broker responde en kafka:9092.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_LIVE_EVENTS: heypudu.live.events
+      # RabbitMQ corre en el compose aparte (docker-compose.rabbit.yml),
+      # así que desde el contenedor se llega por el host.
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-host.docker.internal}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-heypudu}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-devpassword}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ms-analytics:
+    build: ./ms-analytics
+    container_name: heypudu-ms-analytics
+    ports:
+      - "8087:8087"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID/.well-known/jwks.json}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_LIVE_EVENTS: heypudu.live.events
+      KAFKA_CONSUMER_GROUP: live-analytics-group
+      KAFKA_AUDIT_GROUP: live-audit-group
+      DB_URL: jdbc:postgresql://postgres:5432/heypudu?currentSchema=heypudu_analytics
+      DB_USERNAME: heypudu_analytics_user
+      DB_PASSWORD: ${DB_PASSWORD_HEYPUDU:-devpassword}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
 volumes:
   postgres_data:

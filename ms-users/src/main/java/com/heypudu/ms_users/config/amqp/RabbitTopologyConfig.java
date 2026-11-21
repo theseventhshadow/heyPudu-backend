@@ -16,6 +16,7 @@ import static com.heypudu.ms_users.config.amqp.RabbitTopology.NOTIFICATION_QUEUE
 import static com.heypudu.ms_users.config.amqp.RabbitTopology.NOTIFICATION_QUEUE_DLQ;
 import static com.heypudu.ms_users.config.amqp.RabbitTopology.RK_INTERACTION_COMMENT;
 import static com.heypudu.ms_users.config.amqp.RabbitTopology.RK_INTERACTION_LIKE;
+import static com.heypudu.ms_users.config.amqp.RabbitTopology.RK_ROOM_CREATED;
 import static com.heypudu.ms_users.config.amqp.RabbitTopology.RK_USER_FOLLOWED;
 
 @Configuration
@@ -79,6 +80,11 @@ public class RabbitTopologyConfig {
     @Bean
     public Binding notificationFollowBinding() {
         return BindingBuilder.bind(notificationQueue()).to(eventsExchange()).with(RK_USER_FOLLOWED);
+    }
+
+    @Bean
+    public Binding notificationRoomCreatedBinding() {
+        return BindingBuilder.bind(notificationQueue()).to(eventsExchange()).with(RK_ROOM_CREATED);
     }
 
     @Bean
