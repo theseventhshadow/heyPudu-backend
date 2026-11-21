@@ -12,19 +12,20 @@ Este README es la **fuente de verdad** del backend. Debe contener todo lo necesa
 2. [Arquitectura general](#arquitectura-general)
 3. [Microservicios](#microservicios)
 4. [RabbitMQ](#rabbitmq)
-5. [Decisiones de diseño](#decisiones-de-diseño)
-6. [Estructura del repositorio](#estructura-del-repositorio)
-7. [Convenciones](#convenciones)
-8. [Modelo de datos](#modelo-de-datos)
-9. [Seguridad y autenticación](#seguridad-y-autenticación)
-10. [Comunicación entre microservicios](#comunicación-entre-microservicios)
-11. [Almacenamiento de archivos](#almacenamiento-de-archivos)
-12. [Configuración y entornos](#configuración-y-entornos)
-13. [Ejecución local](#ejecución-local)
-14. [Despliegue](#despliegue)
-15. [CI/CD](#cicd)
-16. [Estado actual del proyecto](#estado-actual-del-proyecto)
-17. [Trabajo futuro](#trabajo-futuro)
+5. [Kafka y salas en vivo](#kafka-y-salas-en-vivo)
+6. [Decisiones de diseño](#decisiones-de-diseño)
+7. [Estructura del repositorio](#estructura-del-repositorio)
+8. [Convenciones](#convenciones)
+9. [Modelo de datos](#modelo-de-datos)
+10. [Seguridad y autenticación](#seguridad-y-autenticación)
+11. [Comunicación entre microservicios](#comunicación-entre-microservicios)
+12. [Almacenamiento de archivos](#almacenamiento-de-archivos)
+13. [Configuración y entornos](#configuración-y-entornos)
+14. [Ejecución local](#ejecución-local)
+15. [Despliegue](#despliegue)
+16. [CI/CD](#cicd)
+17. [Estado actual del proyecto](#estado-actual-del-proyecto)
+18. [Trabajo futuro](#trabajo-futuro)
 
 ---
 
@@ -164,6 +165,132 @@ se mantienen separados de la lógica de negocio.
 
 ---
 
+## Kafka y salas en vivo
+
+Las salas de audio en vivo usan tres piezas que se despliegan en una **EC2
+propia** (`docker-compose.live.prod.yml`), separada de la EC2 del backend y de
+la de RabbitMQ:
+
+- **MediaMTX**: SFU WebRTC. Se publica con WHIP y se escucha con WHEP.
+- **ms-live**: ciclo de vida de las salas, autorización de MediaMTX y emisión
+  de eventos.
+- **ms-analytics**: métricas en tiempo real y auditoría de eventos.
+- **Kafka** en modo KRaft y **Caddy** (TLS para WHIP/WHEP) completan el stack.
+
+```
+Navegador ──WHIP/WHEP (HTTPS)──► Caddy ──► MediaMTX :8889
+     │                                       │
+     │                        hooks runOnRead / runOnUnread
+     │                                       ▼
+     └──REST──► API Gateway ──► ALB ──► ms-live :8086 ──► Kafka
+                                                       │
+                                            ms-analytics :8087
+                                            (dos grupos de consumo)
+
+  Los medios WebRTC (8189/UDP) van directo del navegador a MediaMTX.
+```
+
+### Tópico y eventos
+
+| Elemento | Valor |
+|---|---|
+| Tópico | `heypudu.live.events` |
+| Particiones | 3 |
+| Factor de réplica | 1 |
+| Retención | 7 días |
+| Auto-create | Desactivado: `kafka-init` declara el tópico |
+
+Tipos de evento (`LiveEventType`): `ROOM_CREATED`, `LISTENER_JOINED`,
+`LISTENER_LEFT` y `REACTION`. Cada mensaje es un `LiveRoomEvent` con
+`eventId`, `roomId`, `creatorCognitoSub`, `actorCognitoSub`, `reactionType`,
+`occurredAt` y `schemaVersion`. La clave del mensaje es el `roomId`, de modo
+que todos los eventos de una sala caen en la misma partición y se consumen en
+orden.
+
+### Grupos de consumidores
+
+| Grupo | Servicio | Garantía |
+|---|---|---|
+| `live-analytics-group` | `ms-analytics` | Best-effort: ACK manual; si el procesamiento falla se registra y se continúa. |
+| `live-audit-group` | `ms-analytics` | ACK solo cuando el evento queda guardado en `live_event_audit`; es idempotente por `eventId`. |
+
+Los nombres se configuran con `KAFKA_CONSUMER_GROUP` y `KAFKA_AUDIT_GROUP`.
+
+### Autorización de MediaMTX
+
+MediaMTX usa `authMethod: http` y consulta a `ms-live` en cada publicación y
+cada lectura:
+
+- `publish`: solo el creador de la sala.
+- `read`: el creador o un seguidor del creador, comprobado con `ms-users`
+  (`/api/v1/internal/users/by-cognito/{sub}/followers/check`).
+- Identidad: `user = cognitoSub` y `token`/`password` = JWT; el `sub` del token
+  debe coincidir con `user`.
+
+Los hooks `runOnRead` y `runOnUnread` envían `JOINED`/`LEFT` a
+`/api/v1/internal/mediamtx/hooks` usando el `?user=<cognitoSub>` que el
+frontend añade a la URL WHEP. **MediaMTX entrega `MTX_QUERY` con
+`url.QueryEscape`**, así que `ms-live` decodifica el query antes de leer el
+usuario; sin esa decodificación los hooks se descartan y el contador de
+oyentes se queda en 0.
+
+### Endpoints
+
+| Método y ruta | Descripción |
+|---|---|
+| `POST /api/v1/live/rooms` | Crear la sala; el creador queda como dueño. |
+| `GET /api/v1/live/rooms` | Salas activas con el creador resuelto. |
+| `GET /api/v1/live/rooms/{id}` | Detalle con `whipUrl` y `whepUrl`. |
+| `GET /api/v1/live/rooms/{id}/access` | `canListen` según el seguimiento. |
+| `POST /api/v1/live/rooms/{id}/reactions` | Reacción; solo el creador o un seguidor. |
+| `DELETE /api/v1/live/rooms/{id}` | Cerrar la sala y publicar `room.closed`. |
+| `GET /api/v1/analytics/rooms/{id}/stats` | Oyentes activos y reacciones. |
+| `POST /api/v1/internal/mediamtx/auth` | Autorización de WHIP/WHEP (interno). |
+| `POST /api/v1/internal/mediamtx/hooks` | Hooks de lectura (interno). |
+
+Los endpoints `/api/v1/internal/**` están bloqueados en el ALB con una
+respuesta fija `403`; solo son accesibles desde la red Docker o la IP privada.
+
+### Flujo de una sala
+
+1. El creador crea la sala: `ROOM_CREATED` a Kafka y `room.created` a
+   RabbitMQ, que notifica a sus seguidores.
+2. El creador publica con WHIP; MediaMTX pide autorización a `ms-live`.
+3. Un seguidor escucha con WHEP (`?user=<sub>`); el hook `runOnRead` publica
+   `LISTENER_JOINED` y `ms-analytics` incrementa el contador.
+4. Al salir, `runOnUnread` publica `LISTENER_LEFT`.
+5. El creador cierra la sala: `ms-live` emite `room.closed`, elimina las
+   reacciones y deja de aceptar publicaciones; el frontend refresca el estado
+   y muestra el final a los oyentes sin necesidad de recargar.
+
+### Variables de entorno
+
+| Variable | Servicio | Uso |
+|---|---|---|
+| `KAFKA_BOOTSTRAP_SERVERS` | ambos | `kafka:9092` dentro de Compose. |
+| `KAFKA_TOPIC_LIVE_EVENTS` | ambos | Por defecto `heypudu.live.events`. |
+| `KAFKA_CLUSTER_ID` | `kafka` | Identificador de KRaft. |
+| `MEDIAMTX_PUBLIC_URL` | `ms-live` | Base de `whipUrl` y `whepUrl`. |
+| `MEDIAMTX_SERVICE_TOKEN` | `ms-live`, MediaMTX | Token compartido de los endpoints internos. |
+| `CLIENTS_USERS_BASE_URL` | `ms-live` | IP privada del backend (`:8082`). |
+| `KAFKA_CONSUMER_GROUP` / `KAFKA_AUDIT_GROUP` | `ms-analytics` | Nombres de los grupos. |
+
+### Despliegue
+
+```bash
+cp live-prod.env.example live-prod.env   # completar valores reales
+docker compose --env-file live-prod.env -f docker-compose.live.prod.yml up -d
+```
+
+Las imágenes de `ms-live`, `ms-analytics` y MediaMTX se construyen en local y
+se publican en Docker Hub: la EC2 no incluye `buildx`, así que `compose build`
+falla allí. `live-prod.env` no se versiona.
+
+El detalle de la infraestructura (Security Groups, ALB y sus reglas, Elastic
+IP, TLS con Caddy y verificación) está en `../DESPLIEGUE-AWS.md` (§16 y §17).
+
+---
+
 ## Decisiones de diseño
 
 Estas decisiones son **vinculantes** para el proyecto. Cualquier IA o desarrollador que continúe debe respetarlas.
@@ -261,8 +388,14 @@ heypudu-backend/
 │   └── init-topics.sh                  # Declaración idempotente del tópico
 ├── docker-compose.mediamtx.yml         # SFU WebRTC local (WHIP/WHEP)
 ├── mediamtx/
-│   ├── Dockerfile                      # MediaMTX + curl para los hooks
-│   └── mediamtx.yml                    # Auth HTTP, CORS y hooks
+│   ├── Dockerfile                      # MediaMTX + curl y envsubst
+│   ├── docker-entrypoint.sh            # Genera /mediamtx.yml desde la plantilla
+│   ├── mediamtx.yml                    # Configuración local
+│   └── mediamtx.prod.yml               # Plantilla de producción
+├── docker-compose.live.prod.yml        # Producción de la EC2 de salas en vivo
+├── live-prod.env.example               # Variables de esa EC2 (el .env real no se versiona)
+├── caddy/
+│   └── Caddyfile                       # TLS de WHIP/WHEP hacia MediaMTX
 ├── rabbit/
 │   ├── cluster-init.sh                 # Unión idempotente de rabbit2 al clúster
 │   └── conf/10-heypudu.conf            # Colas quorum por defecto
@@ -450,6 +583,57 @@ heypudu-backend/
         ├── service/impl/RabbitAdminServiceImpl.java
         ├── config/
         └── dto/
+
+```
+
+```
+├── ms-live/                             # ✅ Completado
+│   ├── build.gradle
+│   ├── Dockerfile
+│   ├── README.md
+│   └── src/
+│       ├── main/java/com/heypudu/ms_live/
+│       │   ├── MsLiveApplication.java
+│       │   ├── client/                 # UserClient hacia ms-users
+│       │   ├── config/                 # Seguridad, Kafka, RestClient
+│       │   │   └── amqp/               # Topología y listeners RabbitMQ
+│       │   ├── controller/             # LiveRoomController, MediamtxController
+│       │   ├── dto/                    # Salas, reacciones y MediaMTX
+│       │   ├── exception/
+│       │   ├── messaging/              # Eventos Kafka y mensajes RabbitMQ
+│       │   ├── model/                  # LiveRoom, LiveReaction
+│       │   ├── repository/
+│       │   ├── security/
+│       │   └── service/                # LiveRoomService, MediamtxAuthService
+│       ├── main/resources/
+│       │   ├── application.yml
+│       │   ├── application-dev.yml
+│       │   ├── application-prod.yml
+│       │   └── db/migration/           # V1 salas, V2 reacciones
+│       └── test/java/com/heypudu/ms_live/service/
+│           └── MediamtxAuthServiceTest.java
+│
+└── ms-analytics/                        # ✅ Completado
+    ├── build.gradle
+    ├── Dockerfile
+    ├── README.md
+    └── src/main/
+        ├── java/com/heypudu/ms_analytics/
+        │   ├── MsAnalyticsApplication.java
+        │   ├── audit/                  # Persistencia idempotente de eventos
+        │   ├── config/                 # Kafka (dos grupos) y seguridad
+        │   ├── controller/AnalyticsController.java
+        │   ├── dto/RoomStatsResponse.java
+        │   ├── listener/               # LiveEventListener, LiveAuditListener
+        │   ├── messaging/              # Evento y tipos compartidos
+        │   ├── metrics/                # RoomMetrics y RoomMetricsService
+        │   ├── model/LiveEventAudit.java
+        │   ├── repository/
+        │   └── security/
+        └── resources/
+            ├── application.yml
+            ├── application-dev.yml
+            └── db/migration/V1__init_live_events_audit.sql
 ```
 
 Las estructuras anteriores corresponden al código actual, no a propuestas.
@@ -469,6 +653,8 @@ Estas convenciones son **obligatorias** para todos los microservicios.
   - `ms-users` → `com.heypudu.ms_users`
   - `ms-posts` → `com.heypudu.ms_posts`
   - `ms-interactions` → `com.heypudu.ms_interactions`
+  - `ms-live` → `com.heypudu.ms_live`
+  - `ms-analytics` → `com.heypudu.ms_analytics`
 - Subpaquetes: `config`, `controller`, `dto`, `exception`, `mapper`, `model`, `repository`, `security`, `service`, `service/impl`, `client`.
 
 ### Endpoints
@@ -1052,6 +1238,8 @@ Cada microservicio tiene su propio `Dockerfile` (multi-stage build).
 - Enruta `/api/v1/posts/**` → `ms-posts`
 - Enruta `/api/v1/interactions/**` → `ms-interactions`
 - Enruta `/api/v1/admin/rabbit/**` → `ms-heypudu-rabbit-admin`
+- Enruta `/api/v1/live/**` → `ms-live`
+- Enruta `/api/v1/analytics/**` → `ms-analytics`
 - Valida el JWT contra Cognito antes de reenviar la petición.
 - Los endpoints `/api/v1/internal/**` **no** se exponen públicamente.
 
@@ -1090,9 +1278,9 @@ publica como imagen Docker y se incorpora en
 
 ### ✅ Completado
 
-- Los cinco microservicios Spring Boot están implementados:
-  `ms-auth`, `ms-users`, `ms-posts`, `ms-interactions` y
-  `ms-heypudu-rabbit-admin`.
+- Los siete microservicios Spring Boot están implementados:
+  `ms-auth`, `ms-users`, `ms-posts`, `ms-interactions`,
+  `ms-heypudu-rabbit-admin`, `ms-live` y `ms-analytics`.
 - La autenticación JWT con AWS Cognito y la autorización por grupos están
   integradas.
 - La persistencia productiva utiliza Neon PostgreSQL con un esquema por
@@ -1100,12 +1288,16 @@ publica como imagen Docker y se incorpora en
 - Los archivos de audio, portadas y avatares utilizan AWS S3 con URLs
   prefirmadas.
 - RabbitMQ está desplegado como clúster de dos nodos en una EC2 separada.
-- Existen tres colas funcionales, tres DLQ, exchanges `direct` y `topic`,
+- Existen cuatro colas funcionales, cuatro DLQ, exchanges `direct` y `topic`,
   ACK/NACK manual, TTL, límites y listeners de DLQ.
 - El administrador REST crea y elimina exchanges, colas y bindings y está
   protegido con `ROLE_ADMIN`.
 - Las imágenes Docker de producción están publicadas en Docker Hub y el
   Compose productivo ejecuta los cinco servicios.
+- Las salas de audio en vivo están implementadas y desplegadas: `ms-live`
+  (WHIP/WHEP, acceso por seguimiento, reacciones), `ms-analytics` (oyentes y
+  reacciones en tiempo real, con auditoría en `live_event_audit`), MediaMTX con
+  autorización HTTP y hooks, Kafka en modo KRaft y TLS terminado en Caddy.
 - La infraestructura productiva incluye API Gateway, ALB, EC2, Neon, S3,
   Cognito y Vercel.
 
