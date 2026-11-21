@@ -176,11 +176,24 @@ public class MediamtxAuthService {
         return new AuthenticatedIdentity(tokenSub, token);
     }
 
-    private UUID extractUser(String query) {
+    /**
+     * Extrae el {@code user} del query que MediaMTX pasa a los hooks.
+     *
+     * <p>MediaMTX publica {@code MTX_QUERY} con {@code url.QueryEscape}, así que
+     * {@code user=<sub>} llega como {@code user%3D<sub>}. Se decodifica antes de
+     * partir por {@code &} y {@code =}.
+     */
+    static UUID extractUser(String query) {
         if (query == null || query.isBlank()) {
             return null;
         }
-        String normalized = query.startsWith("?") ? query.substring(1) : query;
+        String decoded = query;
+        try {
+            decoded = URLDecoder.decode(query, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            // Si no se puede decodificar se intenta con el valor recibido.
+        }
+        String normalized = decoded.startsWith("?") ? decoded.substring(1) : decoded;
         for (String pair : normalized.split("&")) {
             int separator = pair.indexOf('=');
             if (separator <= 0) {
@@ -188,8 +201,7 @@ public class MediamtxAuthService {
             }
             if ("user".equals(pair.substring(0, separator))) {
                 try {
-                    return UUID.fromString(URLDecoder.decode(
-                            pair.substring(separator + 1), StandardCharsets.UTF_8));
+                    return UUID.fromString(pair.substring(separator + 1));
                 } catch (IllegalArgumentException ex) {
                     return null;
                 }
