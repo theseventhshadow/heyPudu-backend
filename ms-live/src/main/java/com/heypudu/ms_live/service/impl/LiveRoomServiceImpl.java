@@ -1,6 +1,7 @@
 package com.heypudu.ms_live.service.impl;
 
 import com.heypudu.ms_live.client.UserClient;
+import com.heypudu.ms_live.client.UserSummaryDto;
 import com.heypudu.ms_live.dto.request.CreateLiveRoomRequest;
 import com.heypudu.ms_live.dto.response.LiveRoomAccessResponse;
 import com.heypudu.ms_live.dto.response.LiveRoomResponse;
@@ -16,6 +17,8 @@ import com.heypudu.ms_live.repository.LiveReactionRepository;
 import com.heypudu.ms_live.repository.LiveRoomRepository;
 import com.heypudu.ms_live.security.CognitoUserExtractor;
 import com.heypudu.ms_live.service.LiveRoomService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -27,6 +30,8 @@ import java.util.UUID;
 
 @Service
 public class LiveRoomServiceImpl implements LiveRoomService {
+
+    private static final Logger log = LoggerFactory.getLogger(LiveRoomServiceImpl.class);
 
     private final LiveRoomRepository repository;
     private final LiveReactionRepository reactionRepository;
@@ -67,7 +72,7 @@ public class LiveRoomServiceImpl implements LiveRoomService {
         LiveRoom saved = repository.save(room);
         eventPublisher.roomCreated(saved);
         roomEventPublisher.publishRoomCreated(saved);
-        return toResponse(saved);
+        return toResponse(saved, jwt);
     }
 
     @Override
@@ -80,26 +85,25 @@ public class LiveRoomServiceImpl implements LiveRoomService {
             throw new org.springframework.security.access.AccessDeniedException(
                     "Solo el creador puede cerrar la sala");
         }
-boolean wasLive = room.getStatus() == LiveRoomStatus.LIVE;
+        boolean wasLive = room.getStatus() == LiveRoomStatus.LIVE;
         room.close();
         if (wasLive) {
             roomEventPublisher.publishRoomClosed(room);
         }
-        room.close();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<LiveRoomResponse> listActiveRooms() {
+    public List<LiveRoomResponse> listActiveRooms(Jwt jwt) {
         return repository.findByStatusOrderByStartedAtDesc(LiveRoomStatus.LIVE).stream()
-                .map(this::toResponse)
+                .map(room -> toResponse(room, jwt))
                 .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public LiveRoomResponse getRoom(UUID roomId) {
-        return toResponse(findRoom(roomId));
+    public LiveRoomResponse getRoom(UUID roomId, Jwt jwt) {
+        return toResponse(findRoom(roomId), jwt);
     }
 
     @Override
@@ -153,17 +157,29 @@ boolean wasLive = room.getStatus() == LiveRoomStatus.LIVE;
         return repository.findById(roomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Sala no encontrada"));
     }
-
-    private LiveRoomResponse toResponse(LiveRoom room) {
+    private LiveRoomResponse toResponse(LiveRoom room, Jwt jwt) {
+        UserSummaryDto creator = fetchCreator(room.getCreatorCognitoSub(), jwt);
         return new LiveRoomResponse(
                 room.getId(),
                 room.getTitle(),
                 room.getDescription(),
                 room.getStatus(),
                 room.getCreatorCognitoSub(),
+                creator != null ? creator.name() : null,
+                creator != null ? creator.username() : null,
+                creator != null ? creator.avatarUrl() : null,
                 mediamtxPublicUrl + "/" + room.getId() + "/whip",
                 mediamtxPublicUrl + "/" + room.getId() + "/whep",
                 room.getStartedAt(),
                 room.getEndedAt());
+    }
+
+    private UserSummaryDto fetchCreator(UUID cognitoSub, Jwt jwt) {
+        try {
+            return userClient.getSummaryByCognitoSub(cognitoSub, "Bearer " + jwt.getTokenValue());
+        } catch (RuntimeException ex) {
+            log.warn("No se pudo resolver el creador {} en ms-users: {}", cognitoSub, ex.getMessage());
+            return null;
+        }
     }
 }

@@ -137,6 +137,15 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC_LIVE_EVENTS: heypudu.live.events
       KAFKA_CONSUMER_GROUP: live-analytics-group
+      KAFKA_AUDIT_GROUP: live-audit-group
+      DB_URL: jdbc:postgresql://postgres:5432/heypudu?currentSchema=heypudu_analytics
+      DB_USERNAME: heypudu_analytics_user
+      DB_PASSWORD: ${DB_PASSWORD_HEYPUDU:-devpassword}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
 volumes:
   postgres_data:
