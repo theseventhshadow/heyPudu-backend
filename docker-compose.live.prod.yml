@@ -2,7 +2,9 @@
 # heyPudú! — EC2 3 (fase 8): Kafka + MediaMTX + ms-live + ms-analytics
 #
 #   cp live-prod.env.example live-prod.env   # completar valores
-#   docker compose --env-file live-prod.env -f docker-compose.live.prod.yml up -d --build
+#   docker compose --env-file live-prod.env -f docker-compose.live.prod.yml up -d
+#
+# Solo usa imágenes ya publicadas en Docker Hub (no hace falta buildx en la EC2).
 #
 # Puertos publicados:
 #   - 80/443   Caddy (TLS para WHIP/WHEP) -> mediamtx:8889
@@ -69,9 +71,9 @@ services:
       - live-internal
 
   mediamtx:
-    build:
-      context: ./mediamtx
-    image: heypudu-mediamtx:prod
+    # Se construye y publica desde la máquina local (ver §17.4) para que la
+    # EC2 no necesite buildx:  docker build -t unalmaermitana/heypudu-mediamtx:latest ./mediamtx
+    image: unalmaermitana/heypudu-mediamtx:latest
     container_name: heypudu-mediamtx
     restart: unless-stopped
     environment:
