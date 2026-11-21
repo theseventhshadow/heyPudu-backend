@@ -1,0 +1,167 @@
+# ============================================================
+# heyPudú! — EC2 3 (fase 8): Kafka + MediaMTX + ms-live + ms-analytics
+#
+#   cp live-prod.env.example live-prod.env   # completar valores
+#   docker compose --env-file live-prod.env -f docker-compose.live.prod.yml up -d --build
+#
+# Puertos publicados:
+#   - 80/443   Caddy (TLS para WHIP/WHEP) -> mediamtx:8889
+#   - 8889     interno (solo Caddy)
+#   - 8189/udp medios WebRTC (ICE) directo al navegador
+#   - 9997     API de control, sin publicar
+#   - 8086/8087 ms-live / ms-analytics, solo accesibles desde el SG del ALB
+#   - 9092     Kafka, solo dentro de la red Docker
+# ============================================================
+
+name: heypudu-live
+
+services:
+
+  kafka:
+    image: apache/kafka:3.9.1
+    container_name: heypudu-kafka
+    restart: unless-stopped
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_NUM_PARTITIONS: "3"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_LOG_RETENTION_HOURS: "168"
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    mem_limit: 900m
+    networks:
+      - live-internal
+
+  kafka-init:
+    image: apache/kafka:3.9.1
+    container_name: heypudu-kafka-init
+    restart: "no"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./kafka/init-topics.sh:/init-topics.sh:ro
+    entrypoint: ["/bin/bash", "/init-topics.sh"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_LIVE_EVENTS: ${KAFKA_TOPIC_LIVE_EVENTS:-heypudu.live.events}
+    mem_limit: 256m
+    networks:
+      - live-internal
+
+  mediamtx:
+    build:
+      context: ./mediamtx
+    image: heypudu-mediamtx:prod
+    container_name: heypudu-mediamtx
+    restart: unless-stopped
+    environment:
+      MEDIAMTX_HOST: ${MEDIAMTX_HOST}
+      MEDIAMTX_SERVICE_TOKEN: ${MEDIAMTX_SERVICE_TOKEN}
+      MEDIAMTX_ALLOWED_ORIGIN: ${MEDIAMTX_ALLOWED_ORIGIN:-https://heypudu.vercel.app}
+    volumes:
+      - ./mediamtx/mediamtx.prod.yml:/mediamtx.yml:ro
+    expose:
+      - "8889"
+    ports:
+      - "8189:8189/udp"
+    mem_limit: 200m
+    networks:
+      - live-internal
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: heypudu-caddy
+    restart: unless-stopped
+    depends_on:
+      - mediamtx
+    environment:
+      MEDIAMTX_HOST: ${MEDIAMTX_HOST}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    mem_limit: 100m
+    networks:
+      - live-internal
+
+  ms-live:
+    image: unalmaermitana/heypudu-ms-live:latest
+    container_name: heypudu-ms-live
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx224m -Xss512k -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      DB_URL: ${DB_URL_LIVE}
+      DB_USERNAME: ${DB_USERNAME_LIVE}
+      DB_PASSWORD: ${DB_PASSWORD_LIVE}
+      CLIENTS_USERS_BASE_URL: ${CLIENTS_USERS_BASE_URL}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_LIVE_EVENTS: ${KAFKA_TOPIC_LIVE_EVENTS:-heypudu.live.events}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      MEDIAMTX_PUBLIC_URL: ${MEDIAMTX_PUBLIC_URL}
+      MEDIAMTX_SERVICE_TOKEN: ${MEDIAMTX_SERVICE_TOKEN}
+    ports:
+      - "8086:8086"
+    mem_limit: 450m
+    networks:
+      - live-internal
+
+  ms-analytics:
+    image: unalmaermitana/heypudu-ms-analytics:latest
+    container_name: heypudu-ms-analytics
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx192m -Xss512k -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_LIVE_EVENTS: ${KAFKA_TOPIC_LIVE_EVENTS:-heypudu.live.events}
+      KAFKA_CONSUMER_GROUP: live-analytics-group
+      KAFKA_AUDIT_GROUP: live-audit-group
+      DB_URL: ${DB_URL_ANALYTICS}
+      DB_USERNAME: ${DB_USERNAME_ANALYTICS}
+      DB_PASSWORD: ${DB_PASSWORD_ANALYTICS}
+    ports:
+      - "8087:8087"
+    mem_limit: 350m
+    networks:
+      - live-internal
+
+networks:
+  live-internal:
+    driver: bridge
+
+volumes:
+  kafka_data:
+  caddy_data:
+  caddy_config:
