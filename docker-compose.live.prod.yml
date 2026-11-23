@@ -242,6 +242,24 @@ services:
     networks:
       - live-internal
 
+  # Administrador de Kafka: tópicos, configuraciones y grupos de consumo.
+  # Vive aquí porque comparte la red Docker con los brokers (listener interno).
+  ms-kafka-admin:
+    image: unalmaermitana/heypudu-ms-kafka-admin:latest
+    container_name: heypudu-ms-kafka-admin
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx160m -Xss512k -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      KAFKA_BOOTSTRAP_SERVERS: broker1:9092,broker2:9092
+    ports:
+      - "8088:8088"
+    mem_limit: 350m
+    networks:
+      - live-internal
+
 networks:
   live-internal:
     driver: bridge
