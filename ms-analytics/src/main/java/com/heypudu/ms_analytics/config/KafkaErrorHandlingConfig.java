@@ -13,6 +13,7 @@ import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
 import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.kafka.support.serializer.JsonSerializer;
+import org.apache.kafka.common.TopicPartition;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -60,9 +61,11 @@ public class KafkaErrorHandlingConfig {
 
     @Bean
     public DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<String, Object> deadLetterKafkaTemplate) {
-        // Por defecto publica en <topico>.DLT manteniendo la partición original.
-        DeadLetterPublishingRecoverer recoverer =
-                new DeadLetterPublishingRecoverer(deadLetterKafkaTemplate);
+        // Publica en <topico>.DLT manteniendo la partición original; el sufijo
+        // por defecto de Spring Kafka es "-dlt", y aquí se usa ".DLT".
+        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(
+                deadLetterKafkaTemplate,
+                (record, ex) -> new TopicPartition(record.topic() + DLT_SUFFIX, record.partition()));
         recoverer.setFailIfSendResultIsError(true);
 
         ExponentialBackOffWithMaxRetries backOff = new ExponentialBackOffWithMaxRetries(3);
