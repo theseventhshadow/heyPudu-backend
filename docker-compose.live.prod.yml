@@ -12,60 +12,139 @@
 #   - 8189/udp medios WebRTC (ICE) directo al navegador
 #   - 9997     API de control, sin publicar
 #   - 8086/8087 ms-live / ms-analytics, solo accesibles desde el SG del ALB
-#   - 9092     Kafka, solo dentro de la red Docker
+#   - 2181/9092 ZooKeeper y Kafka, solo dentro de la red Docker
+#
+# Kafka corre en modo ZooKeeper con dos brokers (RF=2). Requiere una
+# instancia con al menos 3,5 GB de RAM (t3.medium), no cabe en t3.small.
 # ============================================================
 
 name: heypudu-live
 
 services:
 
-  kafka:
-    image: apache/kafka:3.9.1
-    container_name: heypudu-kafka
+  # ---------- Kafka con ZooKeeper + 2 brokers ----------
+  # Kafka 4.x retiró ZooKeeper: las imágenes quedan fijadas en la línea 7.9
+  # (Kafka 3.9) a propósito para mantener el modo ZooKeeper.
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.9.0
+    container_name: heypudu-zookeeper
     restart: unless-stopped
     environment:
-      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LOG_DIRS: /var/lib/kafka/data
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      KAFKA_NUM_PARTITIONS: "3"
-      KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
-      KAFKA_LOG_RETENTION_HOURS: "168"
-      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx256m
     volumes:
-      - kafka_data:/var/lib/kafka/data
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      test: ["CMD", "cub", "zk-ready", "localhost", "2181"]
       interval: 10s
       timeout: 10s
       retries: 10
-    mem_limit: 900m
+      start_period: 20s
+    mem_limit: 384m
+    networks:
+      - live-internal
+
+  broker1:
+    image: confluentinc/cp-kafka:7.9.0
+    container_name: heypudu-broker1
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # INTERNAL para los servicios de esta EC2; EXTERNAL para ms-posts (EC2 1).
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:9192
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker1:9092,EXTERNAL://${KAFKA_EXTERNAL_HOST:-127.0.0.1}:9192
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_NUM_PARTITIONS: "3"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "2"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "2"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "2"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+      KAFKA_MIN_INSYNC_REPLICAS: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx384m
+    volumes:
+      - broker1_data:/var/lib/kafka/data
+    ports:
+      - "9192:9192"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+    mem_limit: 700m
+    networks:
+      - live-internal
+
+  broker2:
+    image: confluentinc/cp-kafka:7.9.0
+    container_name: heypudu-broker2
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:9193
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker2:9092,EXTERNAL://${KAFKA_EXTERNAL_HOST:-127.0.0.1}:9193
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_NUM_PARTITIONS: "3"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "2"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "2"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "2"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+      KAFKA_MIN_INSYNC_REPLICAS: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx384m
+    volumes:
+      - broker2_data:/var/lib/kafka/data
+    ports:
+      - "9193:9193"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+    mem_limit: 700m
     networks:
       - live-internal
 
   kafka-init:
-    image: apache/kafka:3.9.1
+    image: confluentinc/cp-kafka:7.9.0
     container_name: heypudu-kafka-init
     restart: "no"
     depends_on:
-      kafka:
+      broker1:
+        condition: service_healthy
+      broker2:
         condition: service_healthy
     volumes:
       - ./kafka/init-topics.sh:/init-topics.sh:ro
     entrypoint: ["/bin/bash", "/init-topics.sh"]
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: broker1:9092,broker2:9092
       KAFKA_TOPIC_LIVE_EVENTS: ${KAFKA_TOPIC_LIVE_EVENTS:-heypudu.live.events}
+      KAFKA_TOPIC_POSTS_EVENTS: ${KAFKA_TOPIC_POSTS_EVENTS:-heypudu.posts.events}
+      KAFKA_TOPIC_PARTITIONS: "3"
+      KAFKA_TOPIC_POSTS_PARTITIONS: "2"
+      KAFKA_TOPIC_REPLICATION_FACTOR: "2"
+      KAFKA_TOPIC_RETENTION_MS: "604800000"
+      KAFKA_TOPIC_POSTS_RETENTION_MS: "259200000"
+      KAFKA_TOPIC_MIN_INSYNC_REPLICAS: "1"
     mem_limit: 256m
     networks:
       - live-internal
@@ -125,7 +204,7 @@ services:
       DB_USERNAME: ${DB_USERNAME_LIVE}
       DB_PASSWORD: ${DB_PASSWORD_LIVE}
       CLIENTS_USERS_BASE_URL: ${CLIENTS_USERS_BASE_URL}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: broker1:9092,broker2:9092
       KAFKA_TOPIC_LIVE_EVENTS: ${KAFKA_TOPIC_LIVE_EVENTS:-heypudu.live.events}
       RABBITMQ_HOST: ${RABBITMQ_HOST}
       RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
@@ -148,10 +227,12 @@ services:
       JAVA_TOOL_OPTIONS: -Xms64m -Xmx192m -Xss512k -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
       COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
       COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: broker1:9092,broker2:9092
       KAFKA_TOPIC_LIVE_EVENTS: ${KAFKA_TOPIC_LIVE_EVENTS:-heypudu.live.events}
       KAFKA_CONSUMER_GROUP: live-analytics-group
       KAFKA_AUDIT_GROUP: live-audit-group
+      KAFKA_TOPIC_POSTS_EVENTS: ${KAFKA_TOPIC_POSTS_EVENTS:-heypudu.posts.events}
+      KAFKA_POSTS_GROUP: ${KAFKA_POSTS_GROUP:-posts-analytics-group}
       DB_URL: ${DB_URL_ANALYTICS}
       DB_USERNAME: ${DB_USERNAME_ANALYTICS}
       DB_PASSWORD: ${DB_PASSWORD_ANALYTICS}
@@ -161,11 +242,32 @@ services:
     networks:
       - live-internal
 
+  # Administrador de Kafka: tópicos, configuraciones y grupos de consumo.
+  # Vive aquí porque comparte la red Docker con los brokers (listener interno).
+  ms-kafka-admin:
+    image: unalmaermitana/heypudu-ms-kafka-admin:latest
+    container_name: heypudu-ms-kafka-admin
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx160m -Xss512k -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      KAFKA_BOOTSTRAP_SERVERS: broker1:9092,broker2:9092
+    ports:
+      - "8088:8088"
+    mem_limit: 350m
+    networks:
+      - live-internal
+
 networks:
   live-internal:
     driver: bridge
 
 volumes:
-  kafka_data:
+  zookeeper_data:
+  zookeeper_log:
+  broker1_data:
+  broker2_data:
   caddy_data:
   caddy_config:
