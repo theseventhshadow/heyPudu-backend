@@ -110,9 +110,10 @@ services:
       MEDIAMTX_PUBLIC_URL: http://localhost:8889
       MEDIAMTX_SERVICE_TOKEN: dev-mediamtx-token
       # Kafka se levanta con: docker compose -f docker-compose.kafka.yml up -d
-      # Dentro de la red de contenedores el broker responde en kafka:9092.
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Dentro de la red los brokers responden en broker1:9092 y broker2:9092.
+      KAFKA_BOOTSTRAP_SERVERS: broker1:9092,broker2:9092
       KAFKA_TOPIC_LIVE_EVENTS: heypudu.live.events
+      KAFKA_TOPIC_POSTS_EVENTS: heypudu.posts.events
       # RabbitMQ corre en el compose aparte (docker-compose.rabbit.yml),
       # así que desde el contenedor se llega por el host.
       RABBITMQ_HOST: ${RABBITMQ_HOST:-host.docker.internal}
@@ -134,8 +135,9 @@ services:
       SPRING_PROFILES_ACTIVE: dev
       COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID}
       COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_DEVPOOLID/.well-known/jwks.json}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: broker1:9092,broker2:9092
       KAFKA_TOPIC_LIVE_EVENTS: heypudu.live.events
+      KAFKA_TOPIC_POSTS_EVENTS: heypudu.posts.events
       KAFKA_CONSUMER_GROUP: live-analytics-group
       KAFKA_AUDIT_GROUP: live-audit-group
       DB_URL: jdbc:postgresql://postgres:5432/heypudu?currentSchema=heypudu_analytics
@@ -143,8 +145,6 @@ services:
       DB_PASSWORD: ${DB_PASSWORD_HEYPUDU:-devpassword}
     depends_on:
       postgres:
-        condition: service_healthy
-      kafka:
         condition: service_healthy
 
 volumes:

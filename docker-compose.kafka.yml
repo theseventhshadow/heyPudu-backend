@@ -1,5 +1,5 @@
 # ============================================================
-# Kafka en modo KRaft (sin Zookeeper) para heyPudú!
+# Kafka con ZooKeeper y dos brokers para heyPudú!
 #
 #   docker compose -f docker-compose.kafka.yml up -d
 #   docker compose -f docker-compose.kafka.yml logs -f kafka-init
@@ -7,69 +7,120 @@
 # Kafka UI:  http://localhost:8090
 #
 # Bootstrap servers:
-#   - desde el host / Kafka UI externa:  localhost:29092
-#   - desde los contenedores:            kafka:9092
+#   - desde el host:           localhost:29092,localhost:29093
+#   - desde los contenedores:  broker1:9092,broker2:9092
 #
 # El proyecto se llama igual que docker-compose.yml (heypudu-backend)
-# para compartir la red por defecto y que ms-live resuelva "kafka".
+# para compartir la red por defecto y que los microservicios resuelvan
+# "broker1" y "broker2".
 #
-# En la EC2 de Kafka este archivo se usa solo, con el listener EXTERNAL
-# apuntando a la IP privada del broker (ver DESPLIEGUE-AWS.md).
+# Kafka 4.x eliminó ZooKeeper, así que la imagen queda fijada en la
+# línea 7.9.0 (Kafka 3.9) a propósito.
 # ============================================================
 
 name: heypudu-backend
 
+x-broker-common: &broker-common
+  image: confluentinc/cp-kafka:7.9.0
+  restart: unless-stopped
+  depends_on:
+    zookeeper:
+      condition: service_healthy
+  environment: &broker-env
+    KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+    KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+    KAFKA_LOG_DIRS: /var/lib/kafka/data
+    KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    KAFKA_NUM_PARTITIONS: "3"
+    KAFKA_DEFAULT_REPLICATION_FACTOR: "2"
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "2"
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "2"
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+    KAFKA_MIN_INSYNC_REPLICAS: "1"
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+    KAFKA_HEAP_OPTS: -Xms256m -Xmx384m
+  healthcheck:
+    test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+    interval: 10s
+    timeout: 10s
+    retries: 12
+    start_period: 40s
+
 services:
 
-  kafka:
-    image: apache/kafka:3.9.1
-    container_name: heypudu-kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.9.0
+    container_name: heypudu-zookeeper
     restart: unless-stopped
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx256m
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD", "cub", "zk-ready", "localhost", "2181", "5"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  broker1:
+    <<: *broker-common
+    container_name: heypudu-broker1
+    hostname: broker1
     ports:
       - "29092:29092"
     environment:
-      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:29092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LOG_DIRS: /var/lib/kafka/data
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      <<: *broker-env
+      KAFKA_BROKER_ID: 1
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker1:9092,EXTERNAL://localhost:29092
     volumes:
-      - kafka_data:/var/lib/kafka/data
-    healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 12
-      start_period: 30s
+      - broker1_data:/var/lib/kafka/data
 
-  # Contenedor de un solo uso: declara el tópico con la configuración
-  # acordada (3 particiones, RF=1, retención de 7 días) y termina.
+  broker2:
+    <<: *broker-common
+    container_name: heypudu-broker2
+    hostname: broker2
+    ports:
+      - "29093:29093"
+    environment:
+      <<: *broker-env
+      KAFKA_BROKER_ID: 2
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:29093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker2:9092,EXTERNAL://localhost:29093
+    volumes:
+      - broker2_data:/var/lib/kafka/data
+
+  # Contenedor de un solo uso: declara los dos tópicos con su configuración
+  # (salas: 3 particiones y 7 días; publicaciones: 2 particiones y 3 días) y termina.
   kafka-init:
-    image: apache/kafka:3.9.1
+    image: confluentinc/cp-kafka:7.9.0
     container_name: heypudu-kafka-init
     restart: "no"
     depends_on:
-      kafka:
+      broker1:
         condition: service_healthy
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC_LIVE_EVENTS: heypudu.live.events
-      KAFKA_TOPIC_PARTITIONS: 3
-      KAFKA_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TOPIC_RETENTION_MS: 604800000
-    entrypoint: ["bash", "/opt/kafka-init/init-topics.sh"]
+      broker2:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "/opt/kafka-init/init-topics.sh"]
     volumes:
       - ./kafka/init-topics.sh:/opt/kafka-init/init-topics.sh:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: broker1:9092,broker2:9092
+      KAFKA_TOPIC_LIVE_EVENTS: ${KAFKA_TOPIC_LIVE_EVENTS:-heypudu.live.events}
+      KAFKA_TOPIC_POSTS_EVENTS: ${KAFKA_TOPIC_POSTS_EVENTS:-heypudu.posts.events}
+      KAFKA_TOPIC_PARTITIONS: "3"
+      KAFKA_TOPIC_POSTS_PARTITIONS: "2"
+      KAFKA_TOPIC_REPLICATION_FACTOR: "2"
+      KAFKA_TOPIC_RETENTION_MS: "604800000"
+      KAFKA_TOPIC_POSTS_RETENTION_MS: "259200000"
+      KAFKA_TOPIC_MIN_INSYNC_REPLICAS: "1"
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -78,12 +129,17 @@ services:
     ports:
       - "8090:8080"
     depends_on:
-      kafka:
+      broker1:
+        condition: service_healthy
+      broker2:
         condition: service_healthy
     environment:
-      KAFKA_CLUSTERS_0_NAME: heypudu-local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_NAME: heypudu
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker1:9092,broker2:9092
       DYNAMIC_CONFIG_ENABLED: "true"
 
 volumes:
-  kafka_data:
+  zookeeper_data:
+  zookeeper_log:
+  broker1_data:
+  broker2_data:
