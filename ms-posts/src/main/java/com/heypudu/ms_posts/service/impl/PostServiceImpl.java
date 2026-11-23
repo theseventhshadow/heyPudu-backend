@@ -11,6 +11,7 @@ import com.heypudu.ms_posts.exception.BusinessException;
 import com.heypudu.ms_posts.exception.ResourceNotFoundException;
 import com.heypudu.ms_posts.mapper.PostMapper;
 import com.heypudu.ms_posts.messaging.PostEventPublisher;
+import com.heypudu.ms_posts.messaging.PostKafkaEventPublisher;
 import com.heypudu.ms_posts.model.Post;
 import com.heypudu.ms_posts.repository.PostRepository;
 import com.heypudu.ms_posts.security.CognitoUserExtractor;
@@ -35,6 +36,7 @@ public class PostServiceImpl implements PostService {
     private final PostRepository postRepository;
     private final UserClient userClient;
     private final PostEventPublisher postEventPublisher;
+    private final PostKafkaEventPublisher postKafkaEventPublisher;
     private final S3Service s3Service;
     private final PostMapper postMapper;
     private final CognitoUserExtractor cognitoUserExtractor;
@@ -42,12 +44,14 @@ public class PostServiceImpl implements PostService {
     public PostServiceImpl(PostRepository postRepository,
                            UserClient userClient,
                            PostEventPublisher postEventPublisher,
+                           PostKafkaEventPublisher postKafkaEventPublisher,
                            S3Service s3Service,
                            PostMapper postMapper,
                            CognitoUserExtractor cognitoUserExtractor) {
         this.postRepository = postRepository;
         this.userClient = userClient;
         this.postEventPublisher = postEventPublisher;
+        this.postKafkaEventPublisher = postKafkaEventPublisher;
         this.s3Service = s3Service;
         this.postMapper = postMapper;
         this.cognitoUserExtractor = cognitoUserExtractor;
@@ -78,6 +82,7 @@ public class PostServiceImpl implements PostService {
 
         Post saved = postRepository.save(post);
         userClient.adjustPostCount(authorId, 1, jwt.getTokenValue());
+        postKafkaEventPublisher.postCreated(saved);
         return toPostResponse(saved);
     }
 
@@ -142,6 +147,7 @@ public class PostServiceImpl implements PostService {
 
         // Asincrono: ms-interactions borra likes y comentarios al consumir el comando.
         postEventPublisher.publishPostDeleted(postId);
+        postKafkaEventPublisher.postDeleted(post.getId(), post.getAuthorId(), post.getType());
 
         if (post.getAudioKey() != null) {
             s3Service.deleteAudio(post.getAudioKey());
@@ -168,6 +174,7 @@ public class PostServiceImpl implements PostService {
                         "Publicacion no encontrada con id: " + postId));
 
         postEventPublisher.publishPostDeleted(postId);
+        postKafkaEventPublisher.postDeleted(post.getId(), post.getAuthorId(), post.getType());
         if (post.getAudioKey() != null) {
             s3Service.deleteAudio(post.getAudioKey());
         }

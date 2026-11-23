@@ -75,6 +75,8 @@ services:
       AWS_REGION: us-east-1
       S3_AUDIO_BUCKET: heypudu-audio-dev
       S3_COVERS_BUCKET: heypudu-covers-dev
+      KAFKA_BOOTSTRAP_SERVERS: broker1:9092,broker2:9092
+      KAFKA_TOPIC_POSTS_EVENTS: heypudu.posts.events
     depends_on:
       postgres:
         condition: service_healthy
@@ -140,6 +142,7 @@ services:
       KAFKA_TOPIC_POSTS_EVENTS: heypudu.posts.events
       KAFKA_CONSUMER_GROUP: live-analytics-group
       KAFKA_AUDIT_GROUP: live-audit-group
+      KAFKA_POSTS_GROUP: posts-analytics-group
       DB_URL: jdbc:postgresql://postgres:5432/heypudu?currentSchema=heypudu_analytics
       DB_USERNAME: heypudu_analytics_user
       DB_PASSWORD: ${DB_PASSWORD_HEYPUDU:-devpassword}

@@ -49,6 +49,12 @@ live:
   audit:
     group-id: ${KAFKA_AUDIT_GROUP:live-audit-group}
 
+posts:
+  events:
+    topic: ${KAFKA_TOPIC_POSTS_EVENTS:heypudu.posts.events}
+  analytics:
+    group-id: ${KAFKA_POSTS_GROUP:posts-analytics-group}
+
 management:
   endpoints:
     web:
