@@ -267,7 +267,8 @@ respuesta fija `403`; solo son accesibles desde la red Docker o la IP privada.
 
 | Variable | Servicio | Uso |
 |---|---|---|
-| `KAFKA_BOOTSTRAP_SERVERS` | ambos | `kafka:9092` dentro de Compose. |
+| `KAFKA_BOOTSTRAP_SERVERS` | ambos | `broker1:9092,broker2:9092` dentro de Compose. |
+| `KAFKA_TOPIC_POSTS_EVENTS` | `ms-posts`, `ms-analytics` | Por defecto `heypudu.posts.events`. |
 | `KAFKA_TOPIC_LIVE_EVENTS` | ambos | Por defecto `heypudu.live.events`. |
 | `KAFKA_CLUSTER_ID` | `kafka` | Identificador de KRaft. |
 | `MEDIAMTX_PUBLIC_URL` | `ms-live` | Base de `whipUrl` y `whepUrl`. |
@@ -383,7 +384,7 @@ heypudu-backend/
 │
 ├── docker-compose.prod.yml             # Producción: cinco microservicios
 ├── docker-compose.rabbit.yml           # Clúster RabbitMQ de dos nodos
-├── docker-compose.kafka.yml            # Kafka KRaft + Kafka UI + init del tópico
+├── docker-compose.kafka.yml            # ZooKeeper + 2 brokers + Kafka UI + init de tópicos
 ├── kafka/
 │   └── init-topics.sh                  # Declaración idempotente del tópico
 ├── docker-compose.mediamtx.yml         # SFU WebRTC local (WHIP/WHEP)
@@ -1091,25 +1092,34 @@ mediante `.env`; nunca deben incluirse en este README.
 
 ### Levantar Kafka
 
-Kafka corre en modo KRaft (sin Zookeeper), con un único broker y Kafka UI:
+Kafka corre en modo **ZooKeeper** con **dos brokers** (ZooKeeper 3.9 + Kafka
+3.9) y Kafka UI. Las imágenes quedan fijadas en la línea 7.9.0 de Confluent
+porque Kafka 4.x eliminó ZooKeeper:
 
 ```bash
 docker compose -f docker-compose.kafka.yml up -d
 docker compose -f docker-compose.kafka.yml logs -f kafka-init
 ```
 
-El contenedor `kafka-init` declara el tópico `heypudu.live.events` (3
-particiones, factor de réplica 1 y retención de 7 días) y termina.
+El contenedor `kafka-init` declara los dos tópicos y termina:
+
+| Tópico | Particiones | Réplicas | Retención | Flujo |
+|---|---|---|---|---|
+| `heypudu.live.events` | 3 | 2 | 7 días | Salas de audio en vivo |
+| `heypudu.posts.events` | 2 | 2 | 3 días | Publicaciones |
 
 - Kafka UI: `http://localhost:8090`
-- Bootstrap desde el host: `localhost:29092`
-- Bootstrap desde contenedores de Compose: `kafka:9092`
+- ZooKeeper: `localhost:2181`
+- Bootstrap desde el host: `localhost:29092,localhost:29093`
+- Bootstrap desde contenedores de Compose: `broker1:9092,broker2:9092`
 
-Verificar el tópico:
+Verificar tópicos y grupos:
 
 ```bash
-docker exec heypudu-kafka /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --describe --topic heypudu.live.events
+docker exec heypudu-broker1 kafka-topics.sh \
+  --bootstrap-server broker1:9092 --describe --topic heypudu.live.events
+docker exec heypudu-broker1 kafka-consumer-groups.sh \
+  --bootstrap-server broker1:9092 --list
 ```
 
 ### Levantar MediaMTX
