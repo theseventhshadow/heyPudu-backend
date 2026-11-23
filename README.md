@@ -219,6 +219,29 @@ orden.
 Los nombres se configuran con `KAFKA_CONSUMER_GROUP`, `KAFKA_AUDIT_GROUP` y
 `KAFKA_POSTS_GROUP`.
 
+### Manejo de errores y DLT
+
+Los consumidores de `ms-analytics` no confirman el offset a mano: usan el
+`DefaultErrorHandler` de Spring Kafka (`KafkaErrorHandlingConfig`).
+
+| Situación | Comportamiento |
+|---|---|
+| Payload inválido (`eventId`, `roomId`/`postId` o `eventType` nulos) | No se reintenta: se publica en `<topico>.DLT` |
+| Error de deserialización | No se reintenta: se publica en `<topico>.DLT` |
+| Fallo transitorio (por ejemplo la base de datos) | 3 reintentos con backoff exponencial (500 ms, 1 s, 2 s) |
+| Reintentos agotados | Se publica en `<topico>.DLT` y se confirma el offset |
+
+Tópicos de mensajes no procesables, declarados por `kafka-init`:
+
+| Tópico | Particiones | Réplicas | Retención |
+|---|---|---|---|
+| `heypudu.live.events.DLT` | 3 | 2 | 30 días |
+| `heypudu.posts.events.DLT` | 2 | 2 | 30 días |
+
+El DLT mantiene la partición del mensaje original, así que el orden por sala o
+por publicación se conserva. Los mensajes se pueden inspeccionar con
+`kafka-console-consumer` o desde `ms-kafka-admin`.
+
 El productor del segundo tópico vive en `ms-posts`, que corre en la EC2 del
 backend y llega al clúster por el listener externo (`9192`/`9193`); `ms-live`,
 `ms-analytics` y `ms-kafka-admin` lo hacen por el listener interno.
