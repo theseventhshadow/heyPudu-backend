@@ -5,7 +5,6 @@ import com.heypudu.ms_analytics.messaging.LiveRoomEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,15 +28,18 @@ public class LiveAuditListener {
     @KafkaListener(
             topics = "${live.events.topic:heypudu.live.events}",
             groupId = "${live.audit.group-id:live-audit-group}")
-    public void onEvent(LiveRoomEvent event, Acknowledgment acknowledgment) {
+    public void onEvent(LiveRoomEvent event) {
+        if (event == null || event.eventId() == null || event.roomId() == null
+                || event.eventType() == null) {
+            // No se reintenta: el mensaje malformado va directo al DLT.
+            throw new IllegalArgumentException("Evento de auditoria invalido: falta eventId, roomId o eventType");
+        }
         boolean stored = auditService.record(event);
         if (stored) {
             log.debug("Evento auditado | type={} | roomId={} | eventId={}",
                     event.eventType(), event.roomId(), event.eventId());
         } else {
-            log.debug("Evento ya auditado o invalido | eventId={}",
-                    event != null ? event.eventId() : null);
+            log.debug("Evento ya auditado | eventId={}", event.eventId());
         }
-        acknowledgment.acknowledge();
     }
 }

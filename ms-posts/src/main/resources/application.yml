@@ -58,6 +58,13 @@ spring:
         retry:
           enabled: false
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+posts:
+  events:
+    topic: ${KAFKA_TOPIC_POSTS_EVENTS:heypudu.posts.events}
+
 rabbit:
   topology:
     message-ttl-ms: ${RABBIT_MSG_TTL_MS:3600000}

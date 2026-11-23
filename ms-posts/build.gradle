@@ -51,6 +51,7 @@ dependencies {
 
     // Mensajeria asincrona (EP2)
     implementation 'org.springframework.boot:spring-boot-starter-amqp'
+    implementation 'org.springframework.kafka:spring-kafka'
 
     // Lombok
     compileOnly 'org.projectlombok:lombok'

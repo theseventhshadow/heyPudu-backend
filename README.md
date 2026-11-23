@@ -110,7 +110,8 @@ Los usuarios se autentican con **AWS Cognito**. Los administradores pueden banea
 | `ms-interactions` | 8084 | `heypudu_interactions` | Likes, comentarios, reportes y mensajería de comandos/eventos. |
 | `ms-heypudu-rabbit-admin` | 8085 | — | Administración REST de exchanges, colas y bindings RabbitMQ. |
 | `ms-live` | 8086 | `heypudu_live` | Salas de audio en vivo, acceso por seguimiento, reacciones y eventos Kafka. |
-| `ms-analytics` | 8087 | — (métricas en memoria) | Métricas en tiempo real desde Kafka: oyentes activos y reacciones. |
+| `ms-analytics` | 8087 | — (métricas en memoria) | Métricas en tiempo real desde Kafka: oyentes activos, reacciones y publicaciones. |
+| `ms-kafka-admin` | 8088 | — | Administración de tópicos, configuraciones y grupos de consumo de Kafka. |
 
 Cada microservicio es un **proyecto Spring Boot independiente** con su propio `build.gradle`, su propia clase `@SpringBootApplication`, su propio `Dockerfile` y su propia configuración.
 
@@ -213,8 +214,37 @@ orden.
 |---|---|---|
 | `live-analytics-group` | `ms-analytics` | Best-effort: ACK manual; si el procesamiento falla se registra y se continúa. |
 | `live-audit-group` | `ms-analytics` | ACK solo cuando el evento queda guardado en `live_event_audit`; es idempotente por `eventId`. |
+| `posts-analytics-group` | `ms-analytics` | Best-effort sobre `heypudu.posts.events`; deduplica por `eventId`. |
 
-Los nombres se configuran con `KAFKA_CONSUMER_GROUP` y `KAFKA_AUDIT_GROUP`.
+Los nombres se configuran con `KAFKA_CONSUMER_GROUP`, `KAFKA_AUDIT_GROUP` y
+`KAFKA_POSTS_GROUP`.
+
+### Manejo de errores y DLT
+
+Los consumidores de `ms-analytics` no confirman el offset a mano: usan el
+`DefaultErrorHandler` de Spring Kafka (`KafkaErrorHandlingConfig`).
+
+| Situación | Comportamiento |
+|---|---|
+| Payload inválido (`eventId`, `roomId`/`postId` o `eventType` nulos) | No se reintenta: se publica en `<topico>.DLT` |
+| Error de deserialización | No se reintenta: se publica en `<topico>.DLT` |
+| Fallo transitorio (por ejemplo la base de datos) | 3 reintentos con backoff exponencial (500 ms, 1 s, 2 s) |
+| Reintentos agotados | Se publica en `<topico>.DLT` y se confirma el offset |
+
+Tópicos de mensajes no procesables, declarados por `kafka-init`:
+
+| Tópico | Particiones | Réplicas | Retención |
+|---|---|---|---|
+| `heypudu.live.events.DLT` | 3 | 2 | 30 días |
+| `heypudu.posts.events.DLT` | 2 | 2 | 30 días |
+
+El DLT mantiene la partición del mensaje original, así que el orden por sala o
+por publicación se conserva. Los mensajes se pueden inspeccionar con
+`kafka-console-consumer` o desde `ms-kafka-admin`.
+
+El productor del segundo tópico vive en `ms-posts`, que corre en la EC2 del
+backend y llega al clúster por el listener externo (`9192`/`9193`); `ms-live`,
+`ms-analytics` y `ms-kafka-admin` lo hacen por el listener interno.
 
 ### Autorización de MediaMTX
 
@@ -245,11 +275,29 @@ oyentes se queda en 0.
 | `POST /api/v1/live/rooms/{id}/reactions` | Reacción; solo el creador o un seguidor. |
 | `DELETE /api/v1/live/rooms/{id}` | Cerrar la sala y publicar `room.closed`. |
 | `GET /api/v1/analytics/rooms/{id}/stats` | Oyentes activos y reacciones. |
+| `GET /api/v1/analytics/posts/stats` | Publicaciones creadas y eliminadas. |
 | `POST /api/v1/internal/mediamtx/auth` | Autorización de WHIP/WHEP (interno). |
 | `POST /api/v1/internal/mediamtx/hooks` | Hooks de lectura (interno). |
 
 Los endpoints `/api/v1/internal/**` están bloqueados en el ALB con una
 respuesta fija `403`; solo son accesibles desde la red Docker o la IP privada.
+
+### Administración del clúster
+
+`ms-kafka-admin` expone el `AdminClient` de Kafka por REST, igual que
+`ms-heypudu-rabbit-admin` hace con `RabbitAdmin`. Todas las rutas exigen
+`ROLE_ADMIN` y están en `/api/v1/admin/kafka`:
+
+| Método y ruta | Descripción |
+|---|---|
+| `GET /cluster` | Brokers vivos, controlador y `clusterId`. |
+| `GET /topics` | Tópicos con particiones, factor de réplica e `internal`. |
+| `GET /topics/{topic}` | Líder, réplicas e ISR por partición, más sus configuraciones. |
+| `POST /topics` | Crea un tópico con particiones, RF, retención y cleanup policy. |
+| `PATCH /topics/{topic}/config` | Cambia configuraciones de forma incremental. |
+| `DELETE /topics/{topic}` | Elimina el tópico. |
+| `GET /groups` | Lista los grupos de consumo. |
+| `GET /groups/{group}` | Estado, miembros y LAG por partición. |
 
 ### Flujo de una sala
 
@@ -267,13 +315,15 @@ respuesta fija `403`; solo son accesibles desde la red Docker o la IP privada.
 
 | Variable | Servicio | Uso |
 |---|---|---|
-| `KAFKA_BOOTSTRAP_SERVERS` | ambos | `kafka:9092` dentro de Compose. |
-| `KAFKA_TOPIC_LIVE_EVENTS` | ambos | Por defecto `heypudu.live.events`. |
-| `KAFKA_CLUSTER_ID` | `kafka` | Identificador de KRaft. |
+| `KAFKA_BOOTSTRAP_SERVERS` | `ms-live`, `ms-analytics`, `ms-kafka-admin` | `broker1:9092,broker2:9092` dentro de Compose; `10.0.7.159:9192,10.0.7.159:9193` desde la EC2 del backend. |
+| `KAFKA_TOPIC_LIVE_EVENTS` | `ms-live`, `ms-analytics` | Por defecto `heypudu.live.events`. |
+| `KAFKA_TOPIC_POSTS_EVENTS` | `ms-posts`, `ms-analytics` | Por defecto `heypudu.posts.events`. |
+| `KAFKA_CONSUMER_GROUP` / `KAFKA_AUDIT_GROUP` | `ms-analytics` | Grupos de las salas. |
+| `KAFKA_POSTS_GROUP` | `ms-analytics` | Grupo de publicaciones (`posts-analytics-group`). |
+| `KAFKA_EXTERNAL_HOST` | brokers | IP privada de la EC2 del clúster para el listener externo. |
 | `MEDIAMTX_PUBLIC_URL` | `ms-live` | Base de `whipUrl` y `whepUrl`. |
 | `MEDIAMTX_SERVICE_TOKEN` | `ms-live`, MediaMTX | Token compartido de los endpoints internos. |
 | `CLIENTS_USERS_BASE_URL` | `ms-live` | IP privada del backend (`:8082`). |
-| `KAFKA_CONSUMER_GROUP` / `KAFKA_AUDIT_GROUP` | `ms-analytics` | Nombres de los grupos. |
 
 ### Despliegue
 
@@ -383,7 +433,7 @@ heypudu-backend/
 │
 ├── docker-compose.prod.yml             # Producción: cinco microservicios
 ├── docker-compose.rabbit.yml           # Clúster RabbitMQ de dos nodos
-├── docker-compose.kafka.yml            # Kafka KRaft + Kafka UI + init del tópico
+├── docker-compose.kafka.yml            # ZooKeeper + 2 brokers + Kafka UI + init de tópicos
 ├── kafka/
 │   └── init-topics.sh                  # Declaración idempotente del tópico
 ├── docker-compose.mediamtx.yml         # SFU WebRTC local (WHIP/WHEP)
@@ -1091,25 +1141,34 @@ mediante `.env`; nunca deben incluirse en este README.
 
 ### Levantar Kafka
 
-Kafka corre en modo KRaft (sin Zookeeper), con un único broker y Kafka UI:
+Kafka corre en modo **ZooKeeper** con **dos brokers** (ZooKeeper 3.9 + Kafka
+3.9) y Kafka UI. Las imágenes quedan fijadas en la línea 7.9.0 de Confluent
+porque Kafka 4.x eliminó ZooKeeper:
 
 ```bash
 docker compose -f docker-compose.kafka.yml up -d
 docker compose -f docker-compose.kafka.yml logs -f kafka-init
 ```
 
-El contenedor `kafka-init` declara el tópico `heypudu.live.events` (3
-particiones, factor de réplica 1 y retención de 7 días) y termina.
+El contenedor `kafka-init` declara los dos tópicos y termina:
+
+| Tópico | Particiones | Réplicas | Retención | Flujo |
+|---|---|---|---|---|
+| `heypudu.live.events` | 3 | 2 | 7 días | Salas de audio en vivo |
+| `heypudu.posts.events` | 2 | 2 | 3 días | Publicaciones |
 
 - Kafka UI: `http://localhost:8090`
-- Bootstrap desde el host: `localhost:29092`
-- Bootstrap desde contenedores de Compose: `kafka:9092`
+- ZooKeeper: `localhost:2181`
+- Bootstrap desde el host: `localhost:29092,localhost:29093`
+- Bootstrap desde contenedores de Compose: `broker1:9092,broker2:9092`
 
-Verificar el tópico:
+Verificar tópicos y grupos:
 
 ```bash
-docker exec heypudu-kafka /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --describe --topic heypudu.live.events
+docker exec heypudu-broker1 kafka-topics.sh \
+  --bootstrap-server broker1:9092 --describe --topic heypudu.live.events
+docker exec heypudu-broker1 kafka-consumer-groups.sh \
+  --bootstrap-server broker1:9092 --list
 ```
 
 ### Levantar MediaMTX
