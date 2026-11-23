@@ -5,9 +5,15 @@ import com.heypudu.ms_analytics.metrics.RoomMetricsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
+/**
+ * Métricas en tiempo real de las salas.
+ *
+ * <p>Ya no confirma el offset a mano: el {@code DefaultErrorHandler} reintenta
+ * los fallos transitorios y manda a {@code heypudu.live.events.DLT} los
+ * mensajes inválidos o los que agoten los reintentos.</p>
+ */
 @Component
 public class LiveEventListener {
 
@@ -20,19 +26,15 @@ public class LiveEventListener {
     }
 
     @KafkaListener(topics = "${live.events.topic:heypudu.live.events}")
-    public void onEvent(LiveRoomEvent event, Acknowledgment acknowledgment) {
-        try {
-            boolean applied = metricsService.apply(event);
-            if (!applied) {
-                log.debug("Evento ignorado por duplicado o invalido | eventId={}",
-                        event != null ? event.eventId() : null);
-            }
-            acknowledgment.acknowledge();
-        } catch (Exception ex) {
-            // Métricas best-effort: se registra y se confirma para no bloquear la partición.
-            log.error("No se pudo procesar el evento | eventId={}",
-                    event != null ? event.eventId() : null, ex);
-            acknowledgment.acknowledge();
+    public void onEvent(LiveRoomEvent event) {
+        if (event == null || event.eventId() == null || event.roomId() == null
+                || event.eventType() == null) {
+            // No se reintenta: el mensaje malformado va directo al DLT.
+            throw new IllegalArgumentException("Evento de sala invalido: falta eventId, roomId o eventType");
+        }
+        boolean applied = metricsService.apply(event);
+        if (!applied) {
+            log.debug("Evento ignorado por duplicado | eventId={}", event.eventId());
         }
     }
 }

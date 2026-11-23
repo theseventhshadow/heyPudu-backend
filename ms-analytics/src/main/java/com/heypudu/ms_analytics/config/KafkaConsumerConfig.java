@@ -11,6 +11,7 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 
 import java.util.HashMap;
@@ -18,6 +19,12 @@ import java.util.Map;
 
 @Configuration
 public class KafkaConsumerConfig {
+
+    private final DefaultErrorHandler kafkaErrorHandler;
+
+    public KafkaConsumerConfig(DefaultErrorHandler kafkaErrorHandler) {
+        this.kafkaErrorHandler = kafkaErrorHandler;
+    }
 
     @Bean
     public ConsumerFactory<String, LiveRoomEvent> liveEventConsumerFactory(
@@ -72,7 +79,10 @@ public class KafkaConsumerConfig {
         ConcurrentKafkaListenerContainerFactory<String, T> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
-        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
+        // Se confirma cada registro procesado; los fallos pasan por el
+        // DefaultErrorHandler (reintentos + DLT).
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
+        factory.setCommonErrorHandler(kafkaErrorHandler);
         return factory;
     }
 }

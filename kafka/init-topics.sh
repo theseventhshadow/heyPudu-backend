@@ -17,6 +17,7 @@
 #   KAFKA_TOPIC_RETENTION_MS         604800000 (7 días)
 #   KAFKA_TOPIC_POSTS_RETENTION_MS   259200000 (3 días)
 #   KAFKA_TOPIC_MIN_INSYNC_REPLICAS  1
+#   KAFKA_TOPIC_DLT_RETENTION_MS     2592000000 (30 días, tópicos .DLT)
 # ============================================================
 set -euo pipefail
 
@@ -38,6 +39,8 @@ REPLICATION_FACTOR="${KAFKA_TOPIC_REPLICATION_FACTOR:-2}"
 RETENTION_MS="${KAFKA_TOPIC_RETENTION_MS:-604800000}"
 POSTS_RETENTION_MS="${KAFKA_TOPIC_POSTS_RETENTION_MS:-259200000}"
 MIN_INSYNC="${KAFKA_TOPIC_MIN_INSYNC_REPLICAS:-1}"
+DLT_SUFFIX=".DLT"
+DLT_RETENTION_MS="${KAFKA_TOPIC_DLT_RETENTION_MS:-2592000000}"
 
 echo "Binario: ${KAFKA_TOPICS}"
 echo "Esperando a Kafka en ${BOOTSTRAP}..."
@@ -72,7 +75,15 @@ create_topic() {
 create_topic "${LIVE_TOPIC}" "${LIVE_PARTITIONS}" "${RETENTION_MS}"
 create_topic "${POSTS_TOPIC}" "${POSTS_PARTITIONS}" "${POSTS_RETENTION_MS}"
 
+# Tópicos de mensajes no procesables (DLT). Mismas particiones que el original
+# para que DeadLetterPublishingRecoverer conserve la partición, y retención
+# larga para poder reprocesarlos con calma.
+create_topic "${LIVE_TOPIC}${DLT_SUFFIX}" "${LIVE_PARTITIONS}" "${DLT_RETENTION_MS}"
+create_topic "${POSTS_TOPIC}${DLT_SUFFIX}" "${POSTS_PARTITIONS}" "${DLT_RETENTION_MS}"
+
 echo
 echo "Tópicos declarados:"
 "${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP}" --describe --topic "${LIVE_TOPIC}"
 "${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP}" --describe --topic "${POSTS_TOPIC}"
+"${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP}" --describe --topic "${LIVE_TOPIC}${DLT_SUFFIX}"
+"${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP}" --describe --topic "${POSTS_TOPIC}${DLT_SUFFIX}"
