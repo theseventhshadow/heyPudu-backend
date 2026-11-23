@@ -2,8 +2,10 @@
 # ============================================================
 # Declara los tópicos de Kafka de heyPudú! y termina.
 #
-# Idempotente: si el tópico ya existe no falla ni cambia su
-# configuración.
+# Idempotente: si un tópico ya existe no falla ni cambia su configuración.
+#
+# Funciona con la imagen de Apache (/opt/kafka/bin/kafka-topics.sh) y con
+# la de Confluent (/usr/bin/kafka-topics).
 #
 # Variables (con valores por defecto para local):
 #   KAFKA_BOOTSTRAP_SERVERS          broker1:9092,broker2:9092
@@ -18,11 +20,13 @@
 # ============================================================
 set -euo pipefail
 
-# La ruta del binario cambia entre la imagen de Apache y la de Confluent.
-if command -v kafka-topics.sh >/dev/null 2>&1; then
-  KAFKA_BIN="$(dirname "$(command -v kafka-topics.sh)")"
+# La ruta y el nombre del binario cambian entre la imagen de Apache y la de Confluent.
+if command -v kafka-topics >/dev/null 2>&1; then
+  KAFKA_TOPICS="$(command -v kafka-topics)"
+elif command -v kafka-topics.sh >/dev/null 2>&1; then
+  KAFKA_TOPICS="$(command -v kafka-topics.sh)"
 else
-  KAFKA_BIN="/opt/kafka/bin"
+  KAFKA_TOPICS="/opt/kafka/bin/kafka-topics.sh"
 fi
 
 BOOTSTRAP="${KAFKA_BOOTSTRAP_SERVERS:-broker1:9092,broker2:9092}"
@@ -35,27 +39,28 @@ RETENTION_MS="${KAFKA_TOPIC_RETENTION_MS:-604800000}"
 POSTS_RETENTION_MS="${KAFKA_TOPIC_POSTS_RETENTION_MS:-259200000}"
 MIN_INSYNC="${KAFKA_TOPIC_MIN_INSYNC_REPLICAS:-1}"
 
+echo "Binario: ${KAFKA_TOPICS}"
 echo "Esperando a Kafka en ${BOOTSTRAP}..."
 for _ in $(seq 1 30); do
-  if "${KAFKA_BIN}/kafka-topics.sh" --bootstrap-server "${BOOTSTRAP}" --list >/dev/null 2>&1; then
+  if "${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP}" --list >/dev/null 2>&1; then
     break
   fi
   sleep 2
 done
 
-if ! "${KAFKA_BIN}/kafka-topics.sh" --bootstrap-server "${BOOTSTRAP}" --list >/dev/null 2>&1; then
+if ! "${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP}" --list >/dev/null 2>&1; then
   echo "ERROR: Kafka no respondió en ${BOOTSTRAP}" >&2
   exit 1
 fi
 
 create_topic() {
   local topic="$1" partitions="$2" retention="$3"
-  if "${KAFKA_BIN}/kafka-topics.sh" --bootstrap-server "${BOOTSTRAP}" --list | grep -qx "${topic}"; then
+  if "${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP}" --list | grep -qx "${topic}"; then
     echo "El tópico ${topic} ya existe; no se modifica."
     return
   fi
   echo "Creando tópico ${topic} (particiones=${partitions}, replicas=${REPLICATION_FACTOR}, retencion=${retention}ms)..."
-  "${KAFKA_BIN}/kafka-topics.sh" --bootstrap-server "${BOOTSTRAP}" --create \
+  "${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP}" --create \
     --topic "${topic}" \
     --partitions "${partitions}" \
     --replication-factor "${REPLICATION_FACTOR}" \
@@ -69,5 +74,5 @@ create_topic "${POSTS_TOPIC}" "${POSTS_PARTITIONS}" "${POSTS_RETENTION_MS}"
 
 echo
 echo "Tópicos declarados:"
-"${KAFKA_BIN}/kafka-topics.sh" --bootstrap-server "${BOOTSTRAP}" --describe --topic "${LIVE_TOPIC}"
-"${KAFKA_BIN}/kafka-topics.sh" --bootstrap-server "${BOOTSTRAP}" --describe --topic "${POSTS_TOPIC}"
+"${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP}" --describe --topic "${LIVE_TOPIC}"
+"${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP}" --describe --topic "${POSTS_TOPIC}"
