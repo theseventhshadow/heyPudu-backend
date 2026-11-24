@@ -12,6 +12,9 @@
 #   - 8189/udp medios WebRTC (ICE) directo al navegador
 #   - 9997     API de control, sin publicar
 #   - 8086/8087 ms-live / ms-analytics, solo accesibles desde el SG del ALB
+#   - 8088     ms-kafka-admin (API REST), solo desde el SG del ALB
+#   - 8090     Kafka UI, publicada SOLO en loopback: se entra por túnel SSH
+#              ssh -i clave.pem -N -L 8090:localhost:8090 ec2-user@35.170.42.143
 #   - 2181/9092 ZooKeeper y Kafka, solo dentro de la red Docker
 #
 # Kafka corre en modo ZooKeeper con dos brokers (RF=2). Requiere una
@@ -146,6 +149,36 @@ services:
       KAFKA_TOPIC_POSTS_RETENTION_MS: "259200000"
       KAFKA_TOPIC_MIN_INSYNC_REPLICAS: "1"
     mem_limit: 256m
+    networks:
+      - live-internal
+
+  # Interfaz web de Kafka, equivalente al management UI de RabbitMQ:
+  # tópicos, particiones, mensajes, grupos de consumo y LAG por partición.
+  #
+  # Se publica en 127.0.0.1 a propósito: no queda expuesta a internet y se
+  # consulta por túnel SSH desde el equipo de desarrollo.
+  #   ssh -i clave.pem -N -L 8090:localhost:8090 ec2-user@35.170.42.143
+  #   http://localhost:8090
+  #
+  # La imagen está fijada en v0.7.2 (última publicada por Provectus); el
+  # proyecto continúa como kafbat/kafka-ui. Ocupa ~420 MB de RAM.
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: heypudu-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      broker1:
+        condition: service_healthy
+      broker2:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: heypudu
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker1:9092,broker2:9092
+      DYNAMIC_CONFIG_ENABLED: "true"
+      JAVA_OPTS: -Xms128m -Xmx256m
+    ports:
+      - "127.0.0.1:8090:8080"
+    mem_limit: 420m
     networks:
       - live-internal
 

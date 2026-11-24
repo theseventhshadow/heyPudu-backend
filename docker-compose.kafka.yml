@@ -123,7 +123,7 @@ services:
       KAFKA_TOPIC_MIN_INSYNC_REPLICAS: "1"
 
   kafka-ui:
-    image: provectuslabs/kafka-ui:latest
+    image: provectuslabs/kafka-ui:v0.7.2
     container_name: heypudu-kafka-ui
     restart: unless-stopped
     ports:
