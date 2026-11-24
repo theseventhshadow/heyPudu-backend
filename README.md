@@ -336,6 +336,14 @@ Las imágenes de `ms-live`, `ms-analytics` y MediaMTX se construyen en local y
 se publican en Docker Hub: la EC2 no incluye `buildx`, así que `compose build`
 falla allí. `live-prod.env` no se versiona.
 
+Kafka UI también se despliega en la EC2 de salas, pero publicada **solo en
+`127.0.0.1:8090`**: no queda expuesta a internet y se consulta con un túnel SSH.
+
+```bash
+ssh -i clave.pem -N -L 8090:localhost:8090 ec2-user@35.170.42.143
+# abrir http://localhost:8090 (cluster "heypudu": tópicos, consumidores y LAG)
+```
+
 El detalle de la infraestructura (Security Groups, ALB y sus reglas, Elastic
 IP, TLS con Caddy y verificación) está en `../DESPLIEGUE-AWS.md` (§16 y §17).
 
@@ -1157,7 +1165,7 @@ El contenedor `kafka-init` declara los dos tópicos y termina:
 | `heypudu.live.events` | 3 | 2 | 7 días | Salas de audio en vivo |
 | `heypudu.posts.events` | 2 | 2 | 3 días | Publicaciones |
 
-- Kafka UI: `http://localhost:8090`
+- Kafka UI: `http://localhost:8090` (`provectuslabs/kafka-ui:v0.7.2`)
 - ZooKeeper: `localhost:2181`
 - Bootstrap desde el host: `localhost:29092,localhost:29093`
 - Bootstrap desde contenedores de Compose: `broker1:9092,broker2:9092`
